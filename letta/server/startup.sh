@@ -70,12 +70,6 @@ if [ -n "$LETTA_SANDBOX_MOUNT_PATH" ]; then
     fi
 fi
 
-# If ADE is enabled, add the --ade flag to the command
-CMD="letta server --host $HOST --port $PORT"
-if [ "${SECURE:-false}" = "true" ]; then
-    CMD="$CMD --secure"
-fi
-
 # Start OpenTelemetry Collector in the background
 if [ -n "$CLICKHOUSE_ENDPOINT" ] && [ -n "$CLICKHOUSE_PASSWORD" ]; then
     echo "Starting OpenTelemetry Collector with Clickhouse export..."
@@ -99,6 +93,47 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Starting Letta Server at http://$HOST:$PORT..."
-echo "Executing: $CMD"
-exec $CMD
+# Check if development mode (mounted volume exists)
+if [ -d "/letta/letta" ]; then
+    # Development mode: ensure /letta takes precedence over /app for Python imports
+    export PYTHONPATH=/letta
+    
+    echo "Starting Letta Server at http://$HOST:$PORT... (development mode: using mounted volume)"
+    
+    # Use Python to modify sys.path and call server() directly
+    exec python3 << 'PYWRAP'
+import sys
+import os
+
+# Modify sys.path BEFORE any imports
+if '/app' in sys.path:
+    sys.path.remove('/app')
+if '/letta' in sys.path:
+    sys.path.remove('/letta')
+sys.path.insert(0, '/letta')
+
+# Set environment
+os.environ['PYTHONPATH'] = '/letta'
+
+# Now import and call the server function directly
+from letta.cli.cli import server
+
+# Get parameters from environment
+host = os.environ.get('HOST', '0.0.0.0')
+port = int(os.environ.get('PORT', '8283'))
+secure = os.environ.get('SECURE', 'false').lower() == 'true'
+
+# Call server function directly (typer will handle it)
+# This supports all CLI options including --secure
+server(host=host, port=port, secure=secure)
+PYWRAP
+else
+    # Production mode: use standard command (no mounted volume)
+    CMD="letta server --host $HOST --port $PORT"
+    if [ "${SECURE:-false}" = "true" ]; then
+        CMD="$CMD --secure"
+    fi
+    echo "Starting Letta Server at http://$HOST:$PORT..."
+    echo "Executing: $CMD"
+    exec $CMD
+fi

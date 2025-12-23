@@ -232,6 +232,7 @@ LLM_MAX_CONTEXT_WINDOW = {
     "deepseek-chat": 64000,
     "deepseek-reasoner": 64000,
     # glm (Z.AI)
+    "glm-4.7": 200000,
     "glm-4.6": 200000,
     "glm-4.5": 128000,
     ## OpenAI models: https://platform.openai.com/docs/models/overview

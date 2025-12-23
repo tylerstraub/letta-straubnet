@@ -517,6 +517,10 @@ class OpenAIClient(LLMClientBase):
         if llm_config.frequency_penalty is not None:
             data.frequency_penalty = llm_config.frequency_penalty
 
+        # Set top_p for GLM-4.7 model
+        if model == "glm-4.7":
+            data.top_p = 0.95
+
         if tools and supports_parallel_tool_calling(model):
             data.parallel_tool_calls = False
 

@@ -37,3 +37,4 @@ from letta.orm.step_metrics import StepMetrics
 from letta.orm.tool import Tool
 from letta.orm.tools_agents import ToolsAgents
 from letta.orm.user import User
+from letta.orm.world_info_entry import WorldInfoEntry

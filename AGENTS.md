@@ -8,343 +8,180 @@ You are working on [Letta](https://github.com/letta-ai/letta), an AI agent frame
 
 ### Key Context
 
-- **Repository**: This is a fork of the official Letta repository
+- **Repository**: Fork of the official Letta repository
 - **Remotes**:
   - `origin`: `git@github.com:tylerstraub/letta-straubnet.git` (your fork)
-  - `upstream`: `git@github.com:letta-ai/letta.git` (official Letta repository)
-- **Instance Management**: This code runs in a Podman container managed by the `letta-instances` system
-- **Hot Reload**: Source code changes are automatically hot-reloaded (no container restart needed)
-- **Development Branch**: All work happens on `main_straubnet` branch (never commit to `main`)
+  - `upstream`: `git@github.com:letta-ai/letta.git` (official repository)
+- **Instance Management**: Code runs in a Podman container managed by `letta-instances` system
+- **Hot Reload**: Enabled via `LETTA_UVICORN_RELOAD=true` - code changes auto-reload (no restart needed)
+- **Development Branch**: All work on `main_straubnet` branch (NEVER commit to `main`)
 
 ## Git Workflow - StraubNet Fork Strategy
 
-This fork uses a **two-branch workflow** to maintain clean upstream integration while allowing fork-specific development.
-
-### Branch Structure
-
-```
-upstream/main ───────────────► A ─► B ─► C ─► D ─► E
-                                \
-main_straubnet ─► A ─► B ─► C ─► S1 ─► S2 ─► S3    (StraubNet-only commits)
-                                \
-feat/mcp-bridge ────────────────► F1 ─► F2 ─► F3    (topic branch)
-```
+This fork uses a **two-branch workflow** to maintain clean upstream integration.
 
 **Branches:**
-- **`main`**: Clean mirror of `upstream/main`. NEVER commit to this branch. It's kept identical to upstream using `reset --hard`.
-- **`main_straubnet`**: Your working trunk. All development happens here or on topic branches that merge back here.
-- **Topic branches**: `feat/`, `fix/`, `exp/`, or `straubnet_` prefix for isolated work.
+- **`main`**: Clean mirror of `upstream/main`. NEVER commit to this branch.
+- **`main_straubnet`**: Your working trunk. All development happens here or on topic branches.
+- **Topic branches**: `feat/`, `fix/`, `exp/` prefixes for isolated work.
 
-### Workflow Rules
+**Workflow Rules:**
+1. NEVER commit to `main` - it's kept identical to upstream using `reset --hard`
+2. All development on `main_straubnet` or topic branches
+3. Use instance management scripts for updates (handles two-branch sync automatically)
 
-1. **NEVER commit to `main`** - It's a clean mirror of upstream
-2. **All development on `main_straubnet`** - This is your working branch
-3. **Use topic branches** - Create `feat/`, `fix/`, or `exp/` branches for features
-4. **Keep `main` clean** - It's synced with upstream using `reset --hard` (not merge)
+### Quick Git Reference
 
-## Instance Management Integration
-
-This Letta instance is managed by the `letta-instances` system. Key paths and commands:
-
-### Instance Location
-- **Instance Root**: `/home/echolab/letta-instances`
-- **This Instance**: `/home/echolab/letta-instances/instances/<instance-name>/`
-- **Source Code**: `/home/echolab/letta-instances/instances/<instance-name>/letta/` (this directory)
-- **Management Script**: `/home/echolab/letta-instances/letta-manage.sh`
-
-### Common Instance Operations
-
-**Check instance status:**
 ```bash
-/home/echolab/letta-instances/letta-manage.sh status <instance-name>
+# Update from upstream (recommended - handles two-branch sync)
+/home/echolab/letta-instances/letta-manage.sh update <instance-name>
+
+# Create topic branch
+/home/echolab/letta-instances/letta-manage.sh feature <instance-name> create feat/my-feature
+
+# Check what differs from upstream (before creating PR)
+/home/echolab/letta-instances/letta-manage.sh check-diff <instance-name>
+
+# Create clean upstream PR branch
+/home/echolab/letta-instances/letta-manage.sh upstream-pr <instance-name> create upstream-pr/name feat/branch
 ```
 
-**View logs:**
+## Instance Management
+
+This Letta instance is managed by the `letta-instances` system at `/home/echolab/letta-instances/`.
+
+**Key Paths:**
+- Instance root: `/home/echolab/letta-instances/instances/<instance-name>/`
+- Source code: `./letta/` (this directory)
+- Management script: `/home/echolab/letta-instances/letta-manage.sh`
+
+**Quick Commands:**
 ```bash
-/home/echolab/letta-instances/letta-manage.sh logs <instance-name>
+letta-manage.sh status <instance-name>    # Check status
+letta-manage.sh logs <instance-name>      # View logs
+letta-manage.sh shell <instance-name>     # Access container
 ```
 
-**Restart instance (if needed):**
-```bash
-/home/echolab/letta-instances/letta-manage.sh restart <instance-name>
-```
-
-**Access container shell:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh shell <instance-name>
-```
+**Container Details:**
+- Container name: `letta-<instance-name>`
+- Source mount: `/letta` (inside container) → `./letta` (on host)
+- Hot reload: Enabled (code changes auto-reload)
+- Database: PostgreSQL in container, isolated per instance
 
 **Note**: For most development, you don't need to restart - changes are hot-reloaded automatically.
 
-### Container Details
+## Extension System Architecture
 
-- **Container Name**: `letta-<instance-name>`
-- **Source Mount**: `/letta` (inside container) → `./letta` (on host)
-- **Hot Reload**: Enabled via `WATCHFILES_FORCE_POLLING=true`
-- **Logs**: Available at `instances/<instance-name>/.persist/logs/Letta.log`
-- **Database**: PostgreSQL running in container (isolated per instance)
+The StraubNet extension system allows adding custom functionality without modifying core Letta code, maintaining easy upstream sync.
 
-## Git Operations
+### Key Principle: Minimal Core Hooks
 
-### Daily Development Workflow
+Extensions use minimal, well-defined integration points in core code:
+- Small hook functions (e.g., `apply_message_extensions()`)
+- Graceful degradation (try/except with no-op fallback)
+- Clear boundaries (extensions don't require core logic changes)
 
-#### 1. Check Current Status
-```bash
-git status
-git branch --show-current  # Should be main_straubnet or a topic branch
+### Current Structure
+
+```
+letta/straubnet_extensions/
+├── README.md                      # Extension patterns & procedures
+├── message_processors/            # Processor system (registry, protocol)
+│   └── _init_processors.py        # Auto-registration
+└── world_info/                    # World Info system (complete)
+    ├── README.md                  # World Info documentation
+    ├── processor.py               # WorldInfoProcessor
+    ├── scanner.py, matcher.py, storage.py
 ```
 
-#### 2. Create a Topic Branch (for new work)
-```bash
-# From the instance management system (recommended):
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> create feat/my-feature
+### Integration Points
 
-# Or manually:
-git checkout main_straubnet
-git checkout -b feat/my-feature
-```
+Extensions hook into core code at minimal points:
 
-**Topic Branch Naming:**
-- `feat/` - New features
-- `fix/` - Bug fixes
-- `exp/` - Experiments
-- `straubnet_` - Legacy prefix (still supported)
+**`letta/server/rest_api/routers/v1/agents.py`:**
+- `send_message()` and `send_message_streaming()` endpoints call `apply_message_extensions()`
+- Integration is a single function call with try/except fallback
 
-#### 3. Make Changes and Commit
-```bash
-# Make your code changes
-# Changes are hot-reloaded automatically (no restart needed)
+**Extension Location Note:**
+Currently extensions are in `letta/straubnet_extensions/` due to container mounting. Ideal would be repository root, but current location is acceptable with proper documentation.
 
-# Commit your changes
-git add <files>
-git commit -m "feat: description of changes"
-```
+### Extension Modules
 
-#### 4. Push Your Work
-```bash
-# Push topic branch
-git push -u origin feat/my-feature
+**World Info System** (Complete):
+- Keyword-based prompt injection (SillyTavern-style)
+- Full CRUD REST API at `/v1/world-info/`
+- Database-driven entries with organization/agent scoping
+- See `letta/straubnet_extensions/world_info/README.md` for full documentation
 
-# Or if working directly on main_straubnet
-git push origin main_straubnet
-```
+**World Info Development Process:**
+- **Feature branch**: `feat/world-info` (long-lived, will receive many incremental commits)
+- **Initial commit**: `feat(straubnet): add World Info system foundation` (includes framework, schema, processor, API)
+- **Future commits**: Use conventional commit format with `feat(straubnet):` prefix for World Info enhancements
+  - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): implement scan_depth for World Info`
+- **Commit strategy**: Incremental commits as features are added/extended (not monolithic)
+- **All World Info work** should be committed to `feat/world-info` branch
 
-#### 5. Merge Topic Branch Back
-```bash
-# Using instance management (recommended):
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> merge feat/my-feature
-
-# Or manually:
-git checkout main_straubnet
-git merge --no-ff feat/my-feature
-git push origin main_straubnet
-```
-
-### Updating from Upstream
-
-**Important**: Always use the instance management script for updates - it handles the two-branch workflow automatically.
-
-```bash
-# Update from upstream (recommended):
-/home/echolab/letta-instances/letta-manage.sh update <instance-name>
-
-# This automatically:
-# 1. Updates 'main' from upstream/main (reset --hard, keeps it clean)
-# 2. Merges 'main' into 'main_straubnet' (brings upstream changes into dev)
-```
-
-**Using rebase instead of merge:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh update <instance-name> --rebase
-```
-
-**Manual update (if needed):**
-```bash
-git fetch upstream
-git checkout main
-git fetch upstream
-git reset --hard upstream/main
-git push --force-with-lease origin main
-
-git checkout main_straubnet
-git merge main  # or: git rebase main
-git push origin main_straubnet
-```
-
-### Creating Upstream Pull Requests
-
-When you want to contribute changes back to the official Letta repository, you need to create a clean PR branch that only contains your commits (not StraubNet-specific changes).
-
-#### Method 1: Cherry-Pick Export (Recommended)
-
-```bash
-# Using instance management:
-/home/echolab/letta-instances/letta-manage.sh upstream-pr <instance-name> create upstream-pr/my-feature feat/my-feature
-
-# This:
-# 1. Creates a branch from clean 'main' (which matches upstream/main)
-# 2. Cherry-picks your commits from the topic branch
-# 3. Pushes to origin for PR creation
-```
-
-#### Method 2: Rebase-Onto Export
-
-```bash
-/home/echolab/letta-instances/letta-manage.sh upstream-pr <instance-name> rebase upstream-pr/my-feature feat/my-feature
-
-# This uses rebase --onto to strip StraubNet base commits
-```
-
-#### Check What You're Dragging
-
-Before creating an upstream PR, check what `main_straubnet` has that upstream doesn't:
-
-```bash
-/home/echolab/letta-instances/letta-manage.sh check-diff <instance-name>
-```
-
-This shows StraubNet-specific commits that should NOT be in upstream PRs.
-
-### Branch Management
-
-**List topic branches:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> list
-```
-
-**Check branch status:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> status feat/my-feature
-```
-
-**Switch branches:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> switch feat/my-feature
-```
-
-**Delete topic branch:**
-```bash
-/home/echolab/letta-instances/letta-manage.sh feature <instance-name> delete feat/my-feature
-```
+For details on:
+- **Extension patterns and adding processors**: See `letta/straubnet_extensions/README.md`
+- **World Info usage and API**: See `letta/straubnet_extensions/world_info/README.md`
 
 ## Development Practices
 
 ### Hot Reload
+- **Enabled**: `LETTA_UVICORN_RELOAD=true`
+- Code changes auto-reload (watchfiles with polling)
+- No container restart needed for code changes
+- Look for `watchfiles.main - INFO - X change detected` in logs
 
-- **Enabled by default**: Changes to Python files are automatically reloaded
-- **No restart needed**: Just save your files and the changes take effect
-- **Watch mode**: Uses `WATCHFILES_FORCE_POLLING=true` for reliable file watching
-
-### Testing
-
-Run tests inside the container:
-```bash
-# Access container shell
-/home/echolab/letta-instances/letta-manage.sh shell <instance-name>
-
-# Inside container, run tests
-cd /letta
-pytest  # or whatever test command Letta uses
-```
-
-### Debugging
+### Testing & Debugging
 
 **View logs:**
 ```bash
-# From host
-/home/echolab/letta-instances/letta-manage.sh logs <instance-name>
-
-# Or directly
-tail -f /home/echolab/letta-instances/instances/<instance-name>/.persist/logs/Letta.log
+letta-manage.sh logs <instance-name>
+# Or directly: tail -f instances/<instance-name>/.persist/logs/Letta.log
 ```
 
-**Container access:**
+**Database access:**
 ```bash
-/home/echolab/letta-instances/letta-manage.sh shell <instance-name>
-```
+# From container
+podman exec letta-<instance-name> psql -U letta -d letta_<instance-name>
 
-**Environment variables:**
-- Check `.env` file in instance directory
-- Or inside container: `env | grep LETTA`
-
-### Database Access
-
-PostgreSQL runs inside the container:
-- **Host**: `localhost` (from inside container)
-- **Port**: Check instance `.env` file for `LETTA_PG_PORT`
-- **Database**: `letta_<instance-name>`
-- **Data**: Persisted at `instances/<instance-name>/.persist/pgdata/`
-
-Access from host:
-```bash
-# Check .env for port
+# Or from host (check .env for port)
 psql -h localhost -p <PG_PORT> -U postgres -d letta_<instance-name>
+```
+
+**Run tests:**
+```bash
+letta-manage.sh shell <instance-name>
+cd /letta
+pytest  # or whatever test command Letta uses
 ```
 
 ## Important Reminders
 
 1. **Never commit to `main`** - It's a clean mirror of upstream
-2. **Always work on `main_straubnet` or topic branches** - Never directly on `main`
-3. **Use topic branches** - Create `feat/`, `fix/`, or `exp/` branches for isolated work
-4. **Hot reload is enabled** - No need to restart container for code changes
-5. **Use instance management scripts** - They handle the two-branch workflow correctly
-6. **Check diffs before upstream PRs** - Use `check-diff` to see what you're dragging
-7. **Clean PR branches** - Use `upstream-pr` commands to create clean PRs without StraubNet commits
+2. **Hot reload is enabled** - No restart needed for code changes
+3. **Use instance management scripts** - They handle two-branch workflow correctly
+4. **Extensions are optional** - Core code gracefully degrades if extensions missing
+5. **Check diffs before upstream PRs** - Use `check-diff` to see StraubNet-specific changes
 
 ## Quick Reference
 
-### Git Workflow Summary
+### Git Workflow
+- Daily dev: Work on `main_straubnet` or topic branches
+- Updates: `letta-manage.sh update <instance-name>`
+- Upstream PRs: `letta-manage.sh upstream-pr <instance-name> create ...`
 
-```
-Daily Development:
-  1. git checkout main_straubnet (or create topic branch)
-  2. Make changes (hot-reloaded automatically)
-  3. git commit
-  4. git push origin <branch>
-  5. Merge topic branch back to main_straubnet when done
+### Extension Development
+- Patterns: See `letta/straubnet_extensions/README.md`
+- World Info: See `letta/straubnet_extensions/world_info/README.md`
+- Hook point: `letta/server/rest_api/routers/v1/agents.py` → `apply_message_extensions()`
 
-Updating from Upstream:
-  letta-manage.sh update <instance-name>
-
-Creating Upstream PR:
-  letta-manage.sh upstream-pr <instance-name> create upstream-pr/name feat/branch
-```
-
-### Instance Management Quick Reference
-
-```bash
-# Status and logs
-letta-manage.sh status <instance-name>
-letta-manage.sh logs <instance-name>
-
-# Git operations
-letta-manage.sh update <instance-name>          # Update from upstream
-letta-manage.sh feature <instance-name> <cmd>  # Manage topic branches
-letta-manage.sh check-diff <instance-name>      # Check what differs from upstream
-letta-manage.sh upstream-pr <instance-name> <cmd>  # Create upstream PR branches
-
-# Container operations
-letta-manage.sh shell <instance-name>           # Access container
-letta-manage.sh restart <instance-name>         # Restart (rarely needed)
-```
-
-## Relationship to Instance Management System
-
-This Letta instance is managed by the `letta-instances` system located at `/home/echolab/letta-instances/`. 
-
-- **For instance management tasks** (creating instances, backups, etc.): Open `/home/echolab/letta-instances/` as workspace and see `AGENTS.md` there
-- **For Letta development tasks** (this file): You're working in the instance's `letta/` directory
-
-The instance management system provides:
-- Container lifecycle management
-- Database persistence
-- Port management
-- Git workflow automation (two-branch sync, topic branches, upstream PRs)
-- Log management
-
-You interact with it via the `letta-manage.sh` script for Git operations and instance management, but your primary work is in this Letta source code directory.
+### Instance Operations
+- Status/logs: `letta-manage.sh status/logs <instance-name>`
+- Shell: `letta-manage.sh shell <instance-name>`
+- Container: `letta-<instance-name>`, database: `letta_<instance-name>`
 
 ---
 
-**Last Updated**: December 2024 - StraubNet fork workflow implementation
-
+**Last Updated**: December 2024 - World Info system foundation committed to `feat/world-info` branch

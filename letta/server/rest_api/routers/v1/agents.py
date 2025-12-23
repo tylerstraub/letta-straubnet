@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import sys
 import traceback
 from datetime import datetime, timezone
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
@@ -66,6 +68,46 @@ from letta.server.server import SyncServer
 from letta.services.lettuce import LettuceClient
 from letta.services.run_manager import RunManager
 from letta.services.streaming_service import StreamingService
+
+# StraubNet extensions - import to register processors
+_extensions_loaded = False
+_extension_error = None
+try:
+    # Add paths to Python path for containerized deployments
+    # Find where letta module is located and add its parent directory to path
+    import letta
+    letta_file = letta.__file__
+    letta_dir = os.path.dirname(letta_file)  # letta/ directory
+    letta_module_path = os.path.dirname(letta_dir)  # Parent directory (should contain both letta/ and straubnet_extensions/)
+    
+    # Check for straubnet_extensions - it's now inside letta/ directory
+    ext_path_in_letta = os.path.join(letta_dir, "straubnet_extensions")
+    ext_path_in_parent = os.path.join(letta_module_path, "straubnet_extensions")
+    
+    if os.path.exists(ext_path_in_letta):
+        # straubnet_extensions is inside letta/, add letta_dir to path
+        if letta_dir not in sys.path:
+            sys.path.insert(0, letta_dir)
+    elif os.path.exists(ext_path_in_parent):
+        # straubnet_extensions is at parent level, add parent to path
+        if letta_module_path not in sys.path:
+            sys.path.insert(0, letta_module_path)
+    else:
+        # Try current working directory as fallback
+        cwd = os.getcwd()
+        cwd_ext_path = os.path.join(cwd, "straubnet_extensions")
+        if os.path.exists(cwd_ext_path):
+            if cwd not in sys.path:
+                sys.path.insert(0, cwd)
+    
+    import straubnet_extensions.message_processors._init_processors  # noqa: F401
+    from straubnet_extensions import apply_message_extensions
+    _extensions_loaded = True
+except (ImportError, Exception) as e:
+    # Extensions not available or error during import, create a no-op function
+    _extension_error = str(e)
+    def apply_message_extensions(messages, agent_id, actor, context=None):
+        return messages
 from letta.settings import settings
 from letta.utils import is_1_0_sdk_version, safe_create_shielded_task, safe_create_task, truncate_file_visible_content
 from letta.validators import AgentId, BlockId, FileId, MessageId, SourceId, ToolId
@@ -76,6 +118,15 @@ from letta.validators import AgentId, BlockId, FileId, MessageId, SourceId, Tool
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 logger = get_logger(__name__)
+
+# Log extension system status after logger is available
+if not _extensions_loaded:
+    logger.warning(f"[StraubNet Extensions] Extension system not available: {_extension_error}")
+    # Debug info only logged if extension fails to load
+    logger.debug(f"[StraubNet Extensions] Python path (first 5): {sys.path[:5]}")
+    logger.debug(f"[StraubNet Extensions] Working directory: {os.getcwd()}")
+else:
+    logger.info("[StraubNet Extensions] Extension system loaded successfully")
 
 
 @router.get("/", response_model=list[AgentState], operation_id="list_agents")
@@ -1494,6 +1545,14 @@ async def send_message(
 
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
 
+    # Apply StraubNet message extensions (e.g., prompt injection)
+    request.messages = apply_message_extensions(
+        messages=request.messages,
+        agent_id=agent_id,
+        actor=actor,
+        context={"server": server},
+    )
+
     if request.streaming and is_1_0_sdk:
         streaming_service = StreamingService(server)
         run, result = await streaming_service.create_agent_stream(
@@ -1629,6 +1688,14 @@ async def send_message_streaming(
     It will stream the steps of the response always, and stream the tokens if 'stream_tokens' is set to True.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+
+    # Apply StraubNet message extensions (e.g., prompt injection)
+    request.messages = apply_message_extensions(
+        messages=request.messages,
+        agent_id=agent_id,
+        actor=actor,
+        context={"server": server},
+    )
 
     # Since this is the dedicated streaming endpoint, ensure streaming is enabled
     request.streaming = True

@@ -123,9 +123,19 @@ host = os.environ.get('HOST', '0.0.0.0')
 port = int(os.environ.get('PORT', '8283'))
 secure = os.environ.get('SECURE', 'false').lower() == 'true'
 
-# Call server function directly (typer will handle it)
-# This supports all CLI options including --secure
-server(host=host, port=port, secure=secure)
+# Set LETTA_SERVER_SECURE environment variable if secure mode is enabled
+# The server() function parameter doesn't work - secure mode is controlled by env var
+if secure:
+    os.environ['LETTA_SERVER_SECURE'] = 'true'
+
+# Call server function with error handling
+try:
+    server(host=host, port=port, secure=secure)
+except Exception as e:
+    import traceback
+    print(f"ERROR: Server failed to start: {e}")
+    traceback.print_exc()
+    sys.exit(1)
 PYWRAP
 else
     # Production mode: use standard command (no mounted volume)

@@ -26,9 +26,13 @@ This fork uses a **two-branch workflow** to maintain clean upstream integration.
 - **Topic branches**: `feat/`, `fix/`, `exp/` prefixes for isolated work.
 
 **Workflow Rules:**
-1. NEVER commit to `main` - it's kept identical to upstream using `reset --hard`
-2. All development on `main_straubnet` or topic branches
-3. Use instance management scripts for updates (handles two-branch sync automatically)
+1. **NEVER commit to `main`** - it's kept identical to upstream using `reset --hard`
+2. **All development on `main_straubnet` or topic branches** - use topic branches for isolated work
+3. **CRITICAL: Code running in instances MUST be on `main_straubnet`**
+   - Feature branches are for development/testing only
+   - Before running migrations or deploying to instances, merge feature branches to `main_straubnet`
+   - Never run database migrations on feature branches that aren't merged (causes state mismatch)
+4. **Use instance management scripts** for updates (handles two-branch sync automatically)
 
 ### Quick Git Reference
 
@@ -114,12 +118,15 @@ Currently extensions are in `letta/straubnet_extensions/` due to container mount
 - See `letta/straubnet_extensions/world_info/README.md` for full documentation
 
 **World Info Development Process:**
-- **Feature branch**: `feat/world-info` (long-lived, will receive many incremental commits)
-- **Initial commit**: `feat(straubnet): add World Info system foundation` (includes framework, schema, processor, API)
-- **Future commits**: Use conventional commit format with `feat(straubnet):` prefix for World Info enhancements
+- **Feature branch**: `feat/world-info` (long-lived, for incremental development)
+- **Development workflow**:
+  1. Develop and commit on `feat/world-info` branch
+  2. **Before running migrations or using in instances**: Merge `feat/world-info` → `main_straubnet`
+  3. Code must exist on `main_straubnet` to be used by running instances
+- **Commit conventions**: Use `feat(straubnet):` prefix for World Info enhancements
   - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): implement scan_depth for World Info`
 - **Commit strategy**: Incremental commits as features are added/extended (not monolithic)
-- **All World Info work** should be committed to `feat/world-info` branch
+- **Current status**: World Info foundation merged to `main_straubnet` (commit `9ea99b87d`)
 
 For details on:
 - **Extension patterns and adding processors**: See `letta/straubnet_extensions/README.md`
@@ -184,4 +191,25 @@ pytest  # or whatever test command Letta uses
 
 ---
 
-**Last Updated**: December 2024 - World Info system foundation committed to `feat/world-info` branch
+## Important Workflow Lessons
+
+### Database Migrations and Feature Branches
+
+**CRITICAL RULE**: Never run database migrations on a feature branch unless that branch's code is already merged to `main_straubnet`.
+
+**Why**: Instances run code from `main_straubnet`. If you migrate the database on a feature branch but don't merge the code:
+- Database state won't match the codebase
+- Alembic revisions will be out of sync
+- Container startup will fail due to schema validation errors
+
+**Correct workflow**:
+1. Develop feature on topic branch (e.g., `feat/world-info`)
+2. **Merge to `main_straubnet` FIRST**
+3. Then run migrations (or migrations run automatically on container startup)
+4. Database state and codebase state stay in sync
+
+**Lesson learned** (December 2024): World Info migration was run on `feat/world-info` before merging, causing a regression when the codebase was on `main_straubnet` without the migration file. Fix: Merge feature branches before running migrations.
+
+---
+
+**Last Updated**: December 2024 - World Info system merged to `main_straubnet`, workflow rules updated

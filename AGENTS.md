@@ -113,6 +113,14 @@ Currently extensions are in `letta/straubnet_extensions/` due to container mount
 - Database-driven entries with organization/agent scoping
 - See `letta/straubnet_extensions/world_info/README.md` for full documentation
 
+**World Info Development Process:**
+- **Feature branch**: `feat/world-info` (long-lived, will receive many incremental commits)
+- **Initial commit**: `feat(straubnet): add World Info system foundation` (includes framework, schema, processor, API)
+- **Future commits**: Use conventional commit format with `feat(straubnet):` prefix for World Info enhancements
+  - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): implement scan_depth for World Info`
+- **Commit strategy**: Incremental commits as features are added/extended (not monolithic)
+- **All World Info work** should be committed to `feat/world-info` branch
+
 For details on:
 - **Extension patterns and adding processors**: See `letta/straubnet_extensions/README.md`
 - **World Info usage and API**: See `letta/straubnet_extensions/world_info/README.md`
@@ -176,4 +184,4 @@ pytest  # or whatever test command Letta uses
 
 ---
 
-**Last Updated**: December 2024 - Refactored for clarity, extensions complete and documented
+**Last Updated**: December 2024 - World Info system foundation committed to `feat/world-info` branch

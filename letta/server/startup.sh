@@ -106,8 +106,8 @@ import sys
 import os
 
 # Modify sys.path BEFORE any imports
-if '/app' in sys.path:
-    sys.path.remove('/app')
+# Insert /letta at the beginning so it's checked first for our code
+# But keep /app in path so /app/.venv (installed packages) remains accessible
 if '/letta' in sys.path:
     sys.path.remove('/letta')
 sys.path.insert(0, '/letta')

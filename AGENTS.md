@@ -159,10 +159,83 @@ psql -h localhost -p <PG_PORT> -U postgres -d letta_<instance-name>
 
 **Run tests:**
 ```bash
+# From container
+podman exec letta-<instance-name> bash -c "cd /app && pytest tests/<test_file>.py -v"
+
+# Or enter container shell
 letta-manage.sh shell <instance-name>
-cd /letta
-pytest  # or whatever test command Letta uses
+cd /app
+pytest tests/<test_file>.py -v
 ```
+
+### Test-Driven Development Patterns
+
+The Letta codebase uses pytest with async support. Tests are organized by purpose:
+
+**Test Organization:**
+- `tests/` - Root-level integration tests
+- `tests/managers/` - Database manager tests (direct DB access)
+- `tests/sdk/` - REST API tests using SDK client
+- `tests/integration_test_*.py` - Full integration tests
+
+**Key Test Patterns:**
+
+1. **Integration Tests (REST API)** - Use `server_url` + `client` fixtures:
+   ```python
+   @pytest.mark.asyncio
+   async def test_endpoint(server_url, default_user):
+       headers = {"user_id": default_user.id, **_get_auth_headers()}
+       response = requests.post(f"{server_url}/v1/endpoint/", headers=headers, json=data)
+       assert response.status_code == 200
+   ```
+
+2. **Manager Tests** - Use `async_session` + `server` fixtures:
+   ```python
+   @pytest.mark.asyncio
+   async def test_manager(server, default_user):
+       result = await server.manager.method_async(actor=default_user)
+       assert result is not None
+   ```
+
+**Important Fixtures:**
+- `server_url` - Server URL (from `tests/conftest.py`, uses `LETTA_SERVER_URL` env var or starts server)
+- `default_user` - Test user with organization (requires DB connection)
+- `default_organization` - Test organization (requires DB connection)
+- `async_session` - Database session (manager tests only)
+
+**Authentication:**
+Tests that make HTTP requests must include authentication:
+```python
+def _get_auth_headers():
+    """Get authentication headers for API requests."""
+    password = os.getenv("LETTA_SERVER_PASSWORD", "")
+    if password:
+        return {"Authorization": f"Bearer {password}"}
+    return {}
+```
+
+**Environment Requirements:**
+- `LETTA_PG_DB` - Database name (e.g., `letta_atlas`)
+- `LETTA_PG_HOST` - Database host (e.g., `localhost`)
+- `LETTA_PG_PORT` - Database port (e.g., `5432`)
+- `LETTA_PG_USER` - Database user
+- `LETTA_PG_PASSWORD` - Database password
+- `LETTA_SERVER_PASSWORD` - Server authentication password (for API requests)
+- `LETTA_SERVER_URL` - Optional: pre-existing server URL (if not set, tests start server)
+
+**Container Setup:**
+The `tests/` directory must be mounted in the container for test files to be visible. The instance manager configures this automatically.
+
+**Example: World Info Tests**
+See `tests/test_world_info.py` for a complete example following these patterns. The World Info test suite demonstrates:
+
+- **Helper classes** (`WorldInfoClient`) for encapsulating API operations
+- **Factory fixtures** (`entry_factory`) for flexible test data creation
+- **Reusable fixtures** (`test_agent`) for common setup scenarios
+- **Assertion helpers** for robust, schema-resilient validation
+- **Organized structure** with clear sections for scalability
+
+This pattern can be adapted for other extension test suites as they grow in complexity.
 
 ## Important Reminders
 
@@ -212,4 +285,4 @@ pytest  # or whatever test command Letta uses
 
 ---
 
-**Last Updated**: December 2024 - World Info system merged to `main_straubnet`, workflow rules updated
+**Last Updated**: December 2024 - World Info system merged to `main_straubnet`, workflow rules updated, testing patterns documented

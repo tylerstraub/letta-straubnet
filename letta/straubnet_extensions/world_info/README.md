@@ -383,6 +383,71 @@ WHERE organization_id = 'your-org-id'
   AND is_deleted = false;
 ```
 
+## Testing
+
+The World Info system includes foundation tests in `tests/test_world_info.py` that demonstrate the testing patterns used throughout the Letta codebase.
+
+### Running Tests
+
+```bash
+# Run all World Info tests
+pytest tests/test_world_info.py -v
+
+# Run a specific test
+pytest tests/test_world_info.py::test_create_world_info_entry -v
+
+# Run tests from container
+podman exec letta-atlas bash -c "cd /app && pytest tests/test_world_info.py -v"
+```
+
+### Test Coverage
+
+The foundation tests cover:
+- **Create Entry** - POST endpoint with full and minimal field validation
+- **List Entries** - GET endpoint with optional filtering
+- **List with Agent Filter** - Testing agent_id filtering (global vs agent-specific)
+- **Get by ID** - Retrieving specific entries and 404 handling
+- **Update Entry** - PATCH for partial and single-field updates
+- **Delete Entry** - DELETE with verification
+
+### Test Architecture
+
+The test suite is structured with helper classes and fixtures for scalability and maintainability:
+
+**Helper Classes:**
+- `WorldInfoClient` - Encapsulates all World Info API operations (create, list, get, update, delete)
+  - Centralizes endpoint changes and error handling
+  - Provides clean API: `client.create_entry(data)` instead of manual HTTP requests
+
+**Fixtures:**
+- `world_info_client` - Provides a `WorldInfoClient` instance configured for the test user
+- `entry_factory` - Flexible factory for creating test entry data with sensible defaults
+- `test_agent` - Creates a test agent for agent-specific entry tests
+
+**Assertion Helpers:**
+- `assert_entry_matches()` - Validates entry fields (only checks provided fields, resilient to schema changes)
+- `assert_entry_in_list()` - Checks entry presence in lists
+
+**Test Structure Example:**
+```python
+@pytest.mark.asyncio
+async def test_create_world_info_entry(world_info_client, entry_factory, default_user):
+    entry_data = entry_factory(
+        keywords=["dog", "puppy"],
+        content="You are a friendly dog.",
+    )
+    entry = world_info_client.create_entry(entry_data)
+    assert_entry_matches(entry, entry_data, default_user.organization_id)
+```
+
+**Benefits:**
+- **Maintainable** - Endpoint changes centralized in `WorldInfoClient`
+- **Extensible** - Easy to add new tests using existing patterns
+- **Resilient** - Assertions check only what matters (schema evolution won't break tests)
+- **Clear** - Well-organized structure with section comments
+
+For more details on test patterns, see the Testing section in `AGENTS.md`.
+
 ## Related Documentation
 
 - **Extension System**: See `../README.md` for information about the extension architecture

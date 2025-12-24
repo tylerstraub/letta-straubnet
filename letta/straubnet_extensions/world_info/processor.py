@@ -180,12 +180,17 @@ class WorldInfoProcessor(MessageProcessor):
         """
         matched = []
         for entry in entries:
-            # Match keywords (case sensitivity from entry setting)
-            if match_keywords(text, entry.keywords, case_sensitive=entry.case_sensitive):
+            # Match keywords (case sensitivity and whole word matching from entry settings)
+            if match_keywords(
+                text,
+                entry.keywords,
+                case_sensitive=entry.case_sensitive,
+                match_whole_words=entry.match_whole_words,
+            ):
                 matched.append(entry)
                 logger.debug(
                     f"[World Info] Entry '{entry.id}' matched keywords {entry.keywords} "
-                    f"(case_sensitive={entry.case_sensitive})"
+                    f"(case_sensitive={entry.case_sensitive}, match_whole_words={entry.match_whole_words})"
                 )
         
         return matched

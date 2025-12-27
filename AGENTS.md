@@ -227,13 +227,13 @@ def _get_auth_headers():
 The `tests/` directory must be mounted in the container for test files to be visible. The instance manager configures this automatically.
 
 **Example: World Info Tests**
-See `tests/test_world_info.py` for a complete example following these patterns. The World Info test suite demonstrates:
+See `tests/world_info_tests/` for a complete example following these patterns. The World Info test suite demonstrates:
 
+- **Organized subdirectory structure** - Tests organized in `tests/world_info_tests/` following the same pattern as `tests/managers/`
+- **Shared fixtures via conftest.py** - Common fixtures (`WorldInfoClient`, `test_agent`) available to all test files
 - **Helper classes** (`WorldInfoClient`) for encapsulating API operations
-- **Factory fixtures** (`entry_factory`) for flexible test data creation
-- **Reusable fixtures** (`test_agent`) for common setup scenarios
-- **Assertion helpers** for robust, schema-resilient validation
-- **Organized structure** with clear sections for scalability
+- **Minimal core tests** - Focused on essential CRUD and regression testing in `test_world_info_api.py`
+- **Scalable structure** - Easy to add detailed test files as needed (e.g., `test_world_info_matcher.py`)
 
 This pattern can be adapted for other extension test suites as they grow in complexity.
 

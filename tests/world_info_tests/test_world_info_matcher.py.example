@@ -1,0 +1,47 @@
+"""
+Example: Detailed matcher tests.
+
+This is an EXAMPLE file showing how you could organize detailed matcher tests
+in a separate file. Rename to remove .example when you're ready to add these tests.
+
+To use:
+1. Copy this file to test_world_info_matcher.py
+2. Remove .example from the filename
+3. Add your detailed matcher tests here
+"""
+
+import pytest
+
+
+def _get_match_keywords_function():
+    """Helper to import match_keywords function."""
+    import importlib.util
+    from pathlib import Path
+    
+    matcher_file = Path(__file__).parent.parent.parent / "letta" / "straubnet_extensions" / "world_info" / "matcher.py"
+    spec = importlib.util.spec_from_file_location("matcher", matcher_file)
+    matcher_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(matcher_module)
+    return matcher_module.match_keywords
+
+
+def test_matcher_whole_words_true_prevents_partial_match():
+    """Test that whole word matching prevents substring matches."""
+    match_keywords = _get_match_keywords_function()
+    
+    # "dog" should NOT match inside "hotdog" when whole word matching is enabled
+    result = match_keywords("hotdog", ["dog"], case_sensitive=False, match_whole_words=True)
+    assert result is False, "'dog' should NOT match inside 'hotdog' when match_whole_words=True"
+
+
+def test_matcher_whole_words_true_matches_standalone_word():
+    """Test that whole word matching still matches standalone words."""
+    match_keywords = _get_match_keywords_function()
+    
+    assert match_keywords("dog", ["dog"], case_sensitive=False, match_whole_words=True) is True
+    assert match_keywords("I have a dog", ["dog"], case_sensitive=False, match_whole_words=True) is True
+    assert match_keywords("I have a dog.", ["dog"], case_sensitive=False, match_whole_words=True) is True
+
+
+# Add more detailed matcher tests here as needed...
+

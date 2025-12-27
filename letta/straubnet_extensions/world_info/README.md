@@ -385,66 +385,74 @@ WHERE organization_id = 'your-org-id'
 
 ## Testing
 
-The World Info system includes foundation tests in `tests/test_world_info.py` that demonstrate the testing patterns used throughout the Letta codebase.
+The World Info system includes minimal foundation tests in `tests/world_info_tests/` that focus on essential CRUD operations and core functionality for health checks and regression testing.
 
 ### Running Tests
 
 ```bash
 # Run all World Info tests
-pytest tests/test_world_info.py -v
+pytest tests/world_info_tests/ -v
+
+# Run the core API tests
+pytest tests/world_info_tests/test_world_info_api.py -v
 
 # Run a specific test
-pytest tests/test_world_info.py::test_create_world_info_entry -v
+pytest tests/world_info_tests/test_world_info_api.py::test_create_entry -v
 
 # Run tests from container
-podman exec letta-atlas bash -c "cd /app && pytest tests/test_world_info.py -v"
+podman exec letta-atlas bash -c "cd /app && pytest tests/world_info_tests/ -v"
 ```
 
 ### Test Coverage
 
-The foundation tests cover:
-- **Create Entry** - POST endpoint with full and minimal field validation
-- **List Entries** - GET endpoint with optional filtering
-- **List with Agent Filter** - Testing agent_id filtering (global vs agent-specific)
-- **Get by ID** - Retrieving specific entries and 404 handling
-- **Update Entry** - PATCH for partial and single-field updates
-- **Delete Entry** - DELETE with verification
+The foundation tests cover essential functionality:
+- **Create Entry** - POST endpoint for creating entries
+- **List Entries** - GET endpoint for listing entries
+- **Get by ID** - Retrieving specific entries
+- **Update Entry** - PATCH endpoint for updating entries
+- **Delete Entry** - DELETE endpoint with verification
+- **Agent Scoping** - Global vs agent-specific entry filtering
+- **Enabled/Disabled** - Entry filtering by enabled status
 
 ### Test Architecture
 
-The test suite is structured with helper classes and fixtures for scalability and maintainability:
+The test suite is organized in a subdirectory structure following the pattern used by `tests/managers/`:
+
+**Structure:**
+```
+tests/world_info_tests/
+├── conftest.py              # Shared fixtures (WorldInfoClient, test_agent)
+├── test_world_info_api.py   # Core API tests (minimal, essential only)
+└── test_world_info_matcher.py.example  # Example template for detailed tests
+```
 
 **Helper Classes:**
 - `WorldInfoClient` - Encapsulates all World Info API operations (create, list, get, update, delete)
   - Centralizes endpoint changes and error handling
   - Provides clean API: `client.create_entry(data)` instead of manual HTTP requests
 
-**Fixtures:**
+**Fixtures (in conftest.py):**
 - `world_info_client` - Provides a `WorldInfoClient` instance configured for the test user
-- `entry_factory` - Flexible factory for creating test entry data with sensible defaults
-- `test_agent` - Creates a test agent for agent-specific entry tests
-
-**Assertion Helpers:**
-- `assert_entry_matches()` - Validates entry fields (only checks provided fields, resilient to schema changes)
-- `assert_entry_in_list()` - Checks entry presence in lists
+- `test_agent` - Creates a test agent for agent-specific entry tests with automatic cleanup
 
 **Test Structure Example:**
 ```python
 @pytest.mark.asyncio
-async def test_create_world_info_entry(world_info_client, entry_factory, default_user):
-    entry_data = entry_factory(
-        keywords=["dog", "puppy"],
-        content="You are a friendly dog.",
-    )
+async def test_create_entry(world_info_client, default_user):
+    entry_data = {
+        "keywords": ["test", "keyword"],
+        "content": "Test content",
+    }
     entry = world_info_client.create_entry(entry_data)
-    assert_entry_matches(entry, entry_data, default_user.organization_id)
+    assert entry["keywords"] == entry_data["keywords"]
+    assert entry["content"] == entry_data["content"]
 ```
 
 **Benefits:**
-- **Maintainable** - Endpoint changes centralized in `WorldInfoClient`
-- **Extensible** - Easy to add new tests using existing patterns
-- **Resilient** - Assertions check only what matters (schema evolution won't break tests)
-- **Clear** - Well-organized structure with section comments
+- **Minimal and focused** - Only essential tests for health checks and regression testing
+- **Scalable structure** - Easy to add detailed test files for specific components as needed
+- **Shared fixtures** - Common fixtures available to all test files via `conftest.py`
+- **Organized** - Follows established patterns from `tests/managers/` and `tests/mcp_tests/`
 
 For more details on test patterns, see the Testing section in `AGENTS.md`.
 

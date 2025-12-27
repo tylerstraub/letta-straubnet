@@ -130,6 +130,29 @@ async def other_user_different_org(server: SyncServer, other_organization):
 
 
 # ======================================================================================================================
+# World Info Entry Fixture
+# ======================================================================================================================
+
+
+@pytest.fixture
+async def default_world_info_entry(server: SyncServer, default_user, sarah_agent):
+    """Create and return a default World Info entry."""
+    async with db_registry.async_session() as session:
+        entry = WorldInfoEntryModel(
+            keywords=["test_keyword"],
+            content="Test World Info content",
+            insertion_order=100,
+            enabled=True,
+            agent_id=sarah_agent.id,
+            organization_id=default_user.organization_id,
+        )
+        await entry.create_async(session, actor=default_user)
+        await session.commit()
+        await session.refresh(entry)
+        yield entry
+
+
+# ======================================================================================================================
 # Source and File Fixtures
 # ======================================================================================================================
 

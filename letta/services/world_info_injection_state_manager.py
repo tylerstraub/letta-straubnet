@@ -4,28 +4,27 @@ Manager for World Info injection state operations.
 
 from typing import List, Optional
 
+from sqlalchemy import select, and_, or_
+
 from letta.log import get_logger
-from letta.orm import WorldInfoInjectionState as ORMWorldInfoInjectionState
-from letta.orm.mixins import OrganizationMixin
-from letta.orm.sqlalchemy_base import SqlalchemyBase
-from letta.schemas import LettaPaginationParams
+from letta.orm import WorldInfoInjectionState as WorldInfoInjectionStateModel
+from letta.orm.errors import NoResultFound
 from letta.schemas.world_info_injection_state import WorldInfoInjectionState as PydanticWorldInfoInjectionState
+from letta.server.db import db_registry
 
 logger = get_logger(__name__)
 
 
-class WorldInfoInjectionStateManager(OrganizationMixin):
+class WorldInfoInjectionStateManager:
     """
     Manages World Info injection state CRUD operations.
     """
 
-    def __init__(self, session: Optional[object] = None):
-        """Initialize the manager with an optional database session."""
-        self.session = session
-        self.model = ORMWorldInfoInjectionState
-        self.pydantic_model = PydanticWorldInfoInjectionState
+    def __init__(self):
+        """Initialize the manager."""
+        pass
 
-    def create_injection_state(
+    async def create_injection_state(
         self,
         world_info_entry_id: str,
         agent_id: str,
@@ -34,7 +33,7 @@ class WorldInfoInjectionStateManager(OrganizationMixin):
         cooldown_setting: int = 0,
         expiration_setting: int = 0,
         last_processed_run_id: Optional[str] = None,
-        actor=None,
+        organization_id: str = "",
     ) -> PydanticWorldInfoInjectionState:
         """
         Create a new injection state record.
@@ -47,64 +46,60 @@ class WorldInfoInjectionStateManager(OrganizationMixin):
             cooldown_setting: Cooldown setting from entry
             expiration_setting: Expiration setting from entry
             last_processed_run_id: Last run processed
-            actor: User performing the action
+            organization_id: Organization ID
 
         Returns:
             Created injection state
         """
-        import uuid
-        from letta.schemas.letta_user import User
+        async with db_registry.async_session() as session:
+            # Check if state already exists (unique constraint)
+            stmt = select(WorldInfoInjectionStateModel).where(
+                and_(
+                    WorldInfoInjectionStateModel.world_info_entry_id == world_info_entry_id,
+                    WorldInfoInjectionStateModel.agent_id == agent_id,
+                )
+            )
+            result = await session.execute(stmt)
+            existing = result.scalar_one_or_none()
+            
+            if existing:
+                return existing.to_pydantic()
+            
+            state = WorldInfoInjectionStateModel(
+                world_info_entry_id=world_info_entry_id,
+                agent_id=agent_id,
+                current_cooldown=current_cooldown,
+                current_expiration=current_expiration,
+                cooldown_setting=cooldown_setting,
+                expiration_setting=expiration_setting,
+                last_processed_run_id=last_processed_run_id,
+                organization_id=organization_id,
+            )
 
-        from letta.orm.sqlalchemy_base import SqlalchemyBase
+            await state.create_async(session)
+            await session.refresh(state)
+            return state.to_pydantic()
 
-        if actor is None:
-            from letta.schemas.letta_user import User
-            actor = User(id="", organization_id="", created_by_id="")
-
-        obj = self.model(
-            id=f"wiis-{uuid.uuid4()}",
-            world_info_entry_id=world_info_entry_id,
-            agent_id=agent_id,
-            current_cooldown=current_cooldown,
-            current_expiration=current_expiration,
-            cooldown_setting=cooldown_setting,
-            expiration_setting=expiration_setting,
-            last_processed_run_id=last_processed_run_id,
-            _created_by_id=actor.id if actor else None,
-            organization_id=actor.organization_id if actor else "",
-        )
-
-        if self.session:
-            self.session.add(obj)
-            self.session.commit()
-            self.session.refresh(obj)
-        else:
-            from letta.db import db
-            db.session.add(obj)
-            db.session.commit()
-            db.session.refresh(obj)
-
-        return self.pydantic_model.model_validate(obj)
-
-    def get_injection_states_by_agent(
-        self, agent_id: str, actor=None
-    ) -> List[PydanticWorldInfoInjectionState]:
+    async def get_injection_states_by_agent(self, agent_id: str) -> List[PydanticWorldInfoInjectionState]:
         """
         Get all injection states for a specific agent.
 
         Args:
             agent_id: ID of the agent
-            actor: User for permission checking
 
         Returns:
             List of injection states for the agent
         """
-        query = self.session.query(self.model).filter_by(agent_id=agent_id) if self.session else self.model.query.filter_by(agent_id=agent_id)
+        async with db_registry.async_session() as session:
+            stmt = select(WorldInfoInjectionStateModel).where(
+                WorldInfoInjectionStateModel.agent_id == agent_id
+            )
+            result = await session.execute(stmt)
+            states = result.scalars().all()
+            return [state.to_pydantic() for state in states]
 
-        return [self.pydantic_model.model_validate(state) for state in query.all()]
-
-    def get_injection_state_by_entry(
-        self, world_info_entry_id: str, agent_id: str, actor=None
+    async def get_injection_state_by_entry(
+        self, world_info_entry_id: str, agent_id: str
     ) -> Optional[PydanticWorldInfoInjectionState]:
         """
         Get injection state for a specific World Info entry and agent.
@@ -112,29 +107,28 @@ class WorldInfoInjectionStateManager(OrganizationMixin):
         Args:
             world_info_entry_id: ID of the World Info entry
             agent_id: ID of the agent
-            actor: User for permission checking
 
         Returns:
             Injection state if found, None otherwise
         """
-        query = (
-            self.session.query(self.model)
-            .filter_by(world_info_entry_id=world_info_entry_id, agent_id=agent_id)
-            if self.session
-            else self.model.query.filter_by(world_info_entry_id=world_info_entry_id, agent_id=agent_id)
-        )
+        async with db_registry.async_session() as session:
+            stmt = select(WorldInfoInjectionStateModel).where(
+                and_(
+                    WorldInfoInjectionStateModel.world_info_entry_id == world_info_entry_id,
+                    WorldInfoInjectionStateModel.agent_id == agent_id,
+                )
+            )
+            result = await session.execute(stmt)
+            state = result.scalar_one_or_none()
+            return state.to_pydantic() if state else None
 
-        result = query.first()
-        return self.pydantic_model.model_validate(result) if result else None
-
-    def update_injection_state(
+    async def update_injection_state(
         self,
         injection_state_id: str,
         current_cooldown: Optional[int] = None,
         current_expiration: Optional[int] = None,
         last_processed_run_id: Optional[str] = None,
         injected_message_id: Optional[str] = None,
-        actor=None,
     ) -> Optional[PydanticWorldInfoInjectionState]:
         """
         Update an injection state record.
@@ -145,56 +139,37 @@ class WorldInfoInjectionStateManager(OrganizationMixin):
             current_expiration: New expiration counter value
             last_processed_run_id: New last processed run ID
             injected_message_id: New injected message ID
-            actor: User for permission checking
 
         Returns:
             Updated injection state if found, None otherwise
         """
-        query = (
-            self.session.query(self.model).filter_by(id=injection_state_id)
-            if self.session
-            else self.model.query.filter_by(id=injection_state_id)
-        )
+        async with db_registry.async_session() as session:
+            state = await WorldInfoInjectionStateModel.read_async(db_session=session, identifier=injection_state_id)
 
-        state = query.first()
-        if not state:
-            return None
+            if current_cooldown is not None:
+                state.current_cooldown = current_cooldown if current_cooldown > 0 else None
+            if current_expiration is not None:
+                state.current_expiration = current_expiration if current_expiration > 0 else None
+            if last_processed_run_id is not None:
+                state.last_processed_run_id = last_processed_run_id
+            if injected_message_id is not None:
+                state.injected_message_id = injected_message_id
 
-        if current_cooldown is not None:
-            state.current_cooldown = current_cooldown if current_cooldown > 0 else None
-        if current_expiration is not None:
-            state.current_expiration = current_expiration if current_expiration > 0 else None
-        if last_processed_run_id is not None:
-            state.last_processed_run_id = last_processed_run_id
-        if injected_message_id is not None:
-            state.injected_message_id = injected_message_id
+            await state.update_async(session)
+            return state.to_pydantic()
 
-        if actor:
-            state._last_updated_by_id = actor.id
-
-        (self.session if self.session else SqlalchemyBase.session).commit()
-        return self.pydantic_model.model_validate(state)
-
-    def delete_injection_state(self, injection_state_id: str, actor=None):
+    async def delete_injection_state(self, injection_state_id: str):
         """
         Delete an injection state record.
 
         Args:
             injection_state_id: ID of the injection state
-            actor: User for permission checking
         """
-        query = (
-            self.session.query(self.model).filter_by(id=injection_state_id)
-            if self.session
-            else self.model.query.filter_by(id=injection_state_id)
-        )
+        async with db_registry.async_session() as session:
+            state = await WorldInfoInjectionStateModel.read_async(db_session=session, identifier=injection_state_id)
+            await state.hard_delete_async(session)
 
-        state = query.first()
-        if state:
-            (self.session if self.session else SqlalchemyBase.session).delete(state)
-            (self.session if self.session else SqlalchemyBase.session).commit()
-
-    def delete_completed_states(self, agent_id: str, actor=None):
+    async def delete_completed_states(self, agent_id: str):
         """
         Delete all completed injection states for an agent.
 
@@ -202,39 +177,33 @@ class WorldInfoInjectionStateManager(OrganizationMixin):
 
         Args:
             agent_id: ID of the agent
-            actor: User for permission checking
         """
-        from sqlalchemy import and_, or_
-
-        query = (
-            self.session.query(self.model).filter_by(agent_id=agent_id)
-            if self.session
-            else self.model.query.filter_by(agent_id=agent_id)
-        )
-
-        query = query.filter(
-            or_(
-                and_(
-                    self.model.current_cooldown == 0,
-                    self.model.current_expiration == 0,
-                ),
-                and_(
-                    self.model.current_cooldown.is_(None),
-                    self.model.current_expiration == 0,
-                ),
-                and_(
-                    self.model.current_cooldown == 0,
-                    self.model.current_expiration.is_(None),
-                ),
-                and_(
-                    self.model.current_cooldown.is_(None),
-                    self.model.current_expiration.is_(None),
-                ),
+        async with db_registry.async_session() as session:
+            stmt = select(WorldInfoInjectionStateModel).where(
+                WorldInfoInjectionStateModel.agent_id == agent_id
             )
-        )
-
-        for state in query.all():
-            (self.session if self.session else SqlalchemyBase.session).delete(state)
-
-        (self.session if self.session else SqlalchemyBase.session).commit()
-
+            stmt = stmt.where(
+                or_(
+                    and_(
+                        WorldInfoInjectionStateModel.current_cooldown == 0,
+                        WorldInfoInjectionStateModel.current_expiration == 0,
+                    ),
+                    and_(
+                        WorldInfoInjectionStateModel.current_cooldown.is_(None),
+                        WorldInfoInjectionStateModel.current_expiration == 0,
+                    ),
+                    and_(
+                        WorldInfoInjectionStateModel.current_cooldown == 0,
+                        WorldInfoInjectionStateModel.current_expiration.is_(None),
+                    ),
+                    and_(
+                        WorldInfoInjectionStateModel.current_cooldown.is_(None),
+                        WorldInfoInjectionStateModel.current_expiration.is_(None),
+                    ),
+                )
+            )
+            result = await session.execute(stmt)
+            states = result.scalars().all()
+            
+            for state in states:
+                await state.hard_delete_async(session)

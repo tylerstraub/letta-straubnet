@@ -1,6 +1,6 @@
 """add cooldown and expiration to world_info_entries, create world_info_injection_states table
 
-Revision ID: add_cooldown_and_expiration_to_world_info
+Revision ID: f3e4d5c6b7a8
 Revises: 3b957d10171b
 Create Date: 2025-12-26 00:00:00.000000
 
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "add_cooldown_and_expiration_to_world_info"
+revision: str = "f3e4d5c6b7a8"
 down_revision: Union[str, None] = "3b957d10171b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

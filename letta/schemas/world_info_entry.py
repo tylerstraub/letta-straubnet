@@ -81,6 +81,4 @@ class WorldInfoEntryUpdate(OrmMetadataBase):
     match_whole_words: Optional[bool] = Field(None, description="Whether keywords should match whole words only.")
     cooldown: Optional[int] = Field(None, description="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.")
     expiration: Optional[int] = Field(None, description="Number of runs before this entry should be removed from context. NULL or 0 = never expire.")
-    cooldown: Optional[int] = Field(None, description="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.")
-    expiration: Optional[int] = Field(None, description="Number of runs before this entry should be removed from context. NULL or 0 = never expire.")
 

@@ -17,16 +17,13 @@ from letta.services.world_info_injection_state_manager import WorldInfoInjection
 
 
 @pytest.mark.asyncio
-async def test_create_injection_state(server, default_organization, test_agent):
+async def test_create_injection_state(server, default_organization, sarah_agent, default_world_info_entry):
     """Test creating a new injection state record."""
     manager = WorldInfoInjectionStateManager()
 
-    # Create a world info entry (we'll mock the ID for this test)
-    world_info_entry_id = "wie-test-12345"
-
     state = await manager.create_injection_state(
-        world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=5,
         current_expiration=10,
         cooldown_setting=5,
@@ -36,8 +33,8 @@ async def test_create_injection_state(server, default_organization, test_agent):
 
     assert state.id is not None
     assert state.id.startswith("wiis-")
-    assert state.world_info_entry_id == world_info_entry_id
-    assert state.agent_id == test_agent["id"]
+    assert state.world_info_entry_id == default_world_info_entry.id
+    assert state.agent_id == sarah_agent.id
     assert state.current_cooldown == 5
     assert state.current_expiration == 10
     assert state.cooldown_setting == 5
@@ -48,15 +45,13 @@ async def test_create_injection_state(server, default_organization, test_agent):
 
 
 @pytest.mark.asyncio
-async def test_create_injection_state_with_nulls(server, default_organization, test_agent):
+async def test_create_injection_state_with_nulls(server, default_organization, sarah_agent, default_world_info_entry):
     """Test creating injection state with NULL counters (treated as 0)."""
     manager = WorldInfoInjectionStateManager()
 
-    world_info_entry_id = "wie-test-nulls"
-
     state = await manager.create_injection_state(
-        world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=None,  # NULL = no cooldown
         current_expiration=None,  # NULL = never expire
         cooldown_setting=0,
@@ -73,15 +68,13 @@ async def test_create_injection_state_with_nulls(server, default_organization, t
 
 
 @pytest.mark.asyncio
-async def test_get_injection_state_by_entry(server, default_organization, test_agent):
+async def test_get_injection_state_by_entry(server, default_organization, sarah_agent, default_world_info_entry):
     """Test retrieving injection state by entry and agent ID."""
     manager = WorldInfoInjectionStateManager()
 
-    world_info_entry_id = "wie-test-retrieve"
-
     created = await manager.create_injection_state(
-        world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=3,
         current_expiration=7,
         cooldown_setting=3,
@@ -89,29 +82,29 @@ async def test_get_injection_state_by_entry(server, default_organization, test_a
         organization_id=default_organization.id,
     )
 
-    retrieved = await manager.get_injection_state_by_entry(world_info_entry_id, test_agent["id"])
+    retrieved = await manager.get_injection_state_by_entry(default_world_info_entry.id, sarah_agent.id)
 
     assert retrieved is not None
     assert retrieved.id == created.id
-    assert retrieved.world_info_entry_id == world_info_entry_id
-    assert retrieved.agent_id == test_agent["id"]
+    assert retrieved.world_info_entry_id == default_world_info_entry.id
+    assert retrieved.agent_id == sarah_agent.id
 
     # Test non-existent retrieval
-    not_found = await manager.get_injection_state_by_entry("nonexistent", test_agent["id"])
+    not_found = await manager.get_injection_state_by_entry("nonexistent", sarah_agent.id)
     assert not_found is None
 
     await manager.delete_injection_state(created.id)
 
 
 @pytest.mark.asyncio
-async def test_get_injection_states_by_agent(server, default_organization, test_agent):
+async def test_get_injection_states_by_agent(server, default_organization, sarah_agent):
     """Test retrieving all injection states for an agent."""
     manager = WorldInfoInjectionStateManager()
 
     # Create multiple states for the same agent
     state1 = await manager.create_injection_state(
-        world_info_entry_id="wie-agent-1",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=1,
         current_expiration=2,
         cooldown_setting=1,
@@ -120,8 +113,8 @@ async def test_get_injection_states_by_agent(server, default_organization, test_
     )
 
     state2 = await manager.create_injection_state(
-        world_info_entry_id="wie-agent-2",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=3,
         current_expiration=4,
         cooldown_setting=3,
@@ -130,7 +123,7 @@ async def test_get_injection_states_by_agent(server, default_organization, test_
     )
 
     # Retrieve all states for agent
-    states = await manager.get_injection_states_by_agent(test_agent["id"])
+    states = await manager.get_injection_states_by_agent(sarah_agent.id)
 
     state_ids = [s.id for s in states]
     assert state1.id in state_ids
@@ -143,7 +136,7 @@ async def test_get_injection_states_by_agent(server, default_organization, test_
 
 
 @pytest.mark.asyncio
-async def test_update_injection_state(server, default_organization, test_agent):
+async def test_update_injection_state(server, default_organization, sarah_agent):
     """Test updating an injection state."""
     manager = WorldInfoInjectionStateManager()
 
@@ -151,7 +144,7 @@ async def test_update_injection_state(server, default_organization, test_agent):
 
     created = await manager.create_injection_state(
         world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        agent_id=sarah_agent.id,
         current_cooldown=10,
         current_expiration=20,
         cooldown_setting=10,
@@ -186,7 +179,7 @@ async def test_update_injection_state(server, default_organization, test_agent):
 
 
 @pytest.mark.asyncio
-async def test_delete_injection_state(server, default_organization, test_agent):
+async def test_delete_injection_state(server, default_organization, sarah_agent):
     """Test deleting an injection state."""
     manager = WorldInfoInjectionStateManager()
 
@@ -194,7 +187,7 @@ async def test_delete_injection_state(server, default_organization, test_agent):
 
     created = await manager.create_injection_state(
         world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        agent_id=sarah_agent.id,
         current_cooldown=1,
         current_expiration=1,
         cooldown_setting=1,
@@ -203,14 +196,14 @@ async def test_delete_injection_state(server, default_organization, test_agent):
     )
 
     # Verify it exists
-    retrieved = await manager.get_injection_state_by_entry(world_info_entry_id, test_agent["id"])
+    retrieved = await manager.get_injection_state_by_entry(world_info_entry_id, sarah_agent.id)
     assert retrieved is not None
 
     # Delete it
     await manager.delete_injection_state(created.id)
 
     # Verify it's gone
-    retrieved = await manager.get_injection_state_by_entry(world_info_entry_id, test_agent["id"])
+    retrieved = await manager.get_injection_state_by_entry(world_info_entry_id, sarah_agent.id)
     assert retrieved is None
 
 
@@ -220,14 +213,14 @@ async def test_delete_injection_state(server, default_organization, test_agent):
 
 
 @pytest.mark.asyncio
-async def test_delete_completed_states(server, default_organization, test_agent):
+async def test_delete_completed_states(server, default_organization, sarah_agent):
     """Test deletion of completed states (both counters at 0 or None)."""
     manager = WorldInfoInjectionStateManager()
 
     # Create multiple states with different completion states
     completed1 = await manager.create_injection_state(
-        world_info_entry_id="wie-completed-1",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=0,
         current_expiration=0,
         cooldown_setting=5,
@@ -236,8 +229,8 @@ async def test_delete_completed_states(server, default_organization, test_agent)
     )
 
     completed2 = await manager.create_injection_state(
-        world_info_entry_id="wie-completed-2",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=None,
         current_expiration=None,
         cooldown_setting=0,
@@ -246,8 +239,8 @@ async def test_delete_completed_states(server, default_organization, test_agent)
     )
 
     completed3 = await manager.create_injection_state(
-        world_info_entry_id="wie-completed-3",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=None,
         current_expiration=0,
         cooldown_setting=0,
@@ -256,8 +249,8 @@ async def test_delete_completed_states(server, default_organization, test_agent)
     )
 
     active = await manager.create_injection_state(
-        world_info_entry_id="wie-active",
-        agent_id=test_agent["id"],
+        world_info_entry_id=default_world_info_entry.id,
+        agent_id=sarah_agent.id,
         current_cooldown=5,
         current_expiration=10,
         cooldown_setting=5,
@@ -266,15 +259,15 @@ async def test_delete_completed_states(server, default_organization, test_agent)
     )
 
     # Delete completed states
-    await manager.delete_completed_states(test_agent["id"])
+    await manager.delete_completed_states(sarah_agent.id)
 
     # Verify completed states are gone
-    assert await manager.get_injection_state_by_entry("wie-completed-1", test_agent["id"]) is None
-    assert await manager.get_injection_state_by_entry("wie-completed-2", test_agent["id"]) is None
-    assert await manager.get_injection_state_by_entry("wie-completed-3", test_agent["id"]) is None
+    assert await manager.get_injection_state_by_entry("wie-completed-1", sarah_agent.id) is None
+    assert await manager.get_injection_state_by_entry("wie-completed-2", sarah_agent.id) is None
+    assert await manager.get_injection_state_by_entry("wie-completed-3", sarah_agent.id) is None
 
     # Verify active state remains
-    remaining = await manager.get_injection_state_by_entry("wie-active", test_agent["id"])
+    remaining = await manager.get_injection_state_by_entry("wie-active", sarah_agent.id)
     assert remaining is not None
     assert remaining.current_cooldown == 5
 
@@ -288,7 +281,7 @@ async def test_delete_completed_states(server, default_organization, test_agent)
 
 
 @pytest.mark.asyncio
-async def test_unique_constraint_per_entry_agent(server, default_organization, test_agent):
+async def test_unique_constraint_per_entry_agent(server, default_organization, sarah_agent):
     """Test that only one state can exist per entry/agent combination."""
     manager = WorldInfoInjectionStateManager()
 
@@ -297,7 +290,7 @@ async def test_unique_constraint_per_entry_agent(server, default_organization, t
     # Create first state
     state1 = await manager.create_injection_state(
         world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        agent_id=sarah_agent.id,
         current_cooldown=1,
         current_expiration=2,
         cooldown_setting=1,
@@ -309,7 +302,7 @@ async def test_unique_constraint_per_entry_agent(server, default_organization, t
     # Manager should return the existing state
     state2 = await manager.create_injection_state(
         world_info_entry_id=world_info_entry_id,
-        agent_id=test_agent["id"],
+        agent_id=sarah_agent.id,
         current_cooldown=3,
         current_expiration=4,
         cooldown_setting=3,
@@ -325,7 +318,7 @@ async def test_unique_constraint_per_entry_agent(server, default_organization, t
 
 
 @pytest.mark.asyncio
-async def test_update_nonexistent_state(server, default_organization, test_agent):
+async def test_update_nonexistent_state(server, default_organization, sarah_agent):
     """Test updating a non-existent state returns None."""
     manager = WorldInfoInjectionStateManager()
 

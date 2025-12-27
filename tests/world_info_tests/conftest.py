@@ -77,6 +77,31 @@ class WorldInfoClient:
         )
         response.raise_for_status()
 
+    def get_injection_states(self, agent_id: str) -> List[Dict]:
+        """
+        Get injection states for an agent (direct DB access for testing).
+        
+        This bypasses the API since we don't expose states via REST.
+        """
+        from letta.orm import WorldInfoInjectionState
+        from letta.db import db
+        
+        states = db.session.query(WorldInfoInjectionState).filter_by(agent_id=agent_id).all()
+        return [
+            {
+                "id": state.id,
+                "world_info_entry_id": state.world_info_entry_id,
+                "agent_id": state.agent_id,
+                "current_cooldown": state.current_cooldown,
+                "current_expiration": state.current_expiration,
+                "last_processed_run_id": state.last_processed_run_id,
+                "injected_message_id": state.injected_message_id,
+                "cooldown_setting": state.cooldown_setting,
+                "expiration_setting": state.expiration_setting,
+            }
+            for state in states
+        ]
+
 
 @pytest.fixture
 def world_info_client(server_url, default_user) -> WorldInfoClient:

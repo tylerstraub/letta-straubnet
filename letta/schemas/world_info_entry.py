@@ -37,6 +37,14 @@ class WorldInfoEntryBase(OrmMetadataBase):
         default=True,
         description="Whether keywords should match whole words only (word boundaries).",
     )
+    cooldown: Optional[int] = Field(
+        default=None,
+        description="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.",
+    )
+    expiration: Optional[int] = Field(
+        default=None,
+        description="Number of runs before this entry should be removed from context. NULL or 0 = never expire.",
+    )
 
 
 class WorldInfoEntry(WorldInfoEntryBase):
@@ -71,4 +79,8 @@ class WorldInfoEntryUpdate(OrmMetadataBase):
     enabled: Optional[bool] = Field(None, description="Whether this entry is enabled.")
     case_sensitive: Optional[bool] = Field(None, description="Whether keyword matching should be case-sensitive.")
     match_whole_words: Optional[bool] = Field(None, description="Whether keywords should match whole words only.")
+    cooldown: Optional[int] = Field(None, description="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.")
+    expiration: Optional[int] = Field(None, description="Number of runs before this entry should be removed from context. NULL or 0 = never expire.")
+    cooldown: Optional[int] = Field(None, description="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.")
+    expiration: Optional[int] = Field(None, description="Number of runs before this entry should be removed from context. NULL or 0 = never expire.")
 

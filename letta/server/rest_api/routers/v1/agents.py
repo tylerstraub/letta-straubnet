@@ -1545,12 +1545,29 @@ async def send_message(
 
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
 
+    # Create a new run for execution tracking (needed for cooldown/expiration tracking)
+    if settings.track_agent_run:
+        runs_manager = RunManager()
+        run = await runs_manager.create_run(
+            pydantic_run=PydanticRun(
+                agent_id=agent_id,
+                background=False,
+                metadata={
+                    "run_type": "send_message",
+                },
+                request_config=LettaRequestConfig.from_letta_request(request),
+            ),
+            actor=actor,
+        )
+    else:
+        run = None
+
     # Apply StraubNet message extensions (e.g., prompt injection)
     request.messages = apply_message_extensions(
         messages=request.messages,
         agent_id=agent_id,
         actor=actor,
-        context={"server": server},
+        context={"server": server, "run_id": run.id if run else None},
     )
 
     if request.streaming and is_1_0_sdk:
@@ -1583,23 +1600,6 @@ async def send_message(
         "groq",
         "deepseek",
     ]
-
-    # Create a new run for execution tracking
-    if settings.track_agent_run:
-        runs_manager = RunManager()
-        run = await runs_manager.create_run(
-            pydantic_run=PydanticRun(
-                agent_id=agent_id,
-                background=False,
-                metadata={
-                    "run_type": "send_message",
-                },
-                request_config=LettaRequestConfig.from_letta_request(request),
-            ),
-            actor=actor,
-        )
-    else:
-        run = None
 
     # TODO (cliandy): clean this up
     redis_client = await get_redis_client()

@@ -70,3 +70,15 @@ class WorldInfoEntry(SqlalchemyBase, OrganizationMixin):
         doc="Whether keywords should match whole words only (word boundaries).",
     )
 
+    cooldown: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Number of runs to wait before this entry can be injected again. NULL or 0 = no cooldown.",
+    )
+
+    expiration: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        doc="Number of runs before this entry should be removed from context. NULL or 0 = never expire.",
+    )
+

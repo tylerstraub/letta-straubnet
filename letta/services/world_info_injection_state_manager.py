@@ -2,7 +2,7 @@
 Manager for World Info injection state operations.
 """
 
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import select, and_, or_
 
@@ -11,6 +11,9 @@ from letta.orm import WorldInfoInjectionState as WorldInfoInjectionStateModel
 from letta.orm.errors import NoResultFound
 from letta.schemas.world_info_injection_state import WorldInfoInjectionState as PydanticWorldInfoInjectionState
 from letta.server.db import db_registry
+
+if TYPE_CHECKING:
+    from letta.schemas.user import User
 
 logger = get_logger(__name__)
 
@@ -32,8 +35,8 @@ class WorldInfoInjectionStateManager:
         current_expiration: Optional[int] = None,
         cooldown_setting: int = 0,
         expiration_setting: int = 0,
-        last_processed_run_id: Optional[str] = None,
         organization_id: str = "",
+        actor: Optional["User"] = None,
     ) -> PydanticWorldInfoInjectionState:
         """
         Create a new injection state record.
@@ -45,8 +48,8 @@ class WorldInfoInjectionStateManager:
             current_expiration: Current expiration counter (None = 0)
             cooldown_setting: Cooldown setting from entry
             expiration_setting: Expiration setting from entry
-            last_processed_run_id: Last run processed
             organization_id: Organization ID
+            actor: Optional user creating the record (for _created_by_id/_last_updated_by_id tracking)
 
         Returns:
             Created injection state
@@ -72,11 +75,10 @@ class WorldInfoInjectionStateManager:
                 current_expiration=current_expiration,
                 cooldown_setting=cooldown_setting,
                 expiration_setting=expiration_setting,
-                last_processed_run_id=last_processed_run_id,
                 organization_id=organization_id,
             )
 
-            await state.create_async(session)
+            await state.create_async(session, actor=actor)
             await session.refresh(state)
             return state.to_pydantic()
 
@@ -127,8 +129,7 @@ class WorldInfoInjectionStateManager:
         injection_state_id: str,
         current_cooldown: Optional[int] = None,
         current_expiration: Optional[int] = None,
-        last_processed_run_id: Optional[str] = None,
-        injected_message_id: Optional[str] = None,
+        actor: Optional["User"] = None,
     ) -> Optional[PydanticWorldInfoInjectionState]:
         """
         Update an injection state record.
@@ -137,8 +138,7 @@ class WorldInfoInjectionStateManager:
             injection_state_id: ID of the injection state
             current_cooldown: New cooldown counter value
             current_expiration: New expiration counter value
-            last_processed_run_id: New last processed run ID
-            injected_message_id: New injected message ID
+            actor: Optional user updating the record (for _last_updated_by_id tracking)
 
         Returns:
             Updated injection state if found, None otherwise
@@ -150,12 +150,8 @@ class WorldInfoInjectionStateManager:
                 state.current_cooldown = current_cooldown if current_cooldown > 0 else None
             if current_expiration is not None:
                 state.current_expiration = current_expiration if current_expiration > 0 else None
-            if last_processed_run_id is not None:
-                state.last_processed_run_id = last_processed_run_id
-            if injected_message_id is not None:
-                state.injected_message_id = injected_message_id
 
-            await state.update_async(session)
+            await state.update_async(session, actor=actor)
             return state.to_pydantic()
 
     async def delete_injection_state(self, injection_state_id: str):

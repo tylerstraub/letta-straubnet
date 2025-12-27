@@ -19,8 +19,6 @@ class WorldInfoInjectionStateBase(OrmMetadataBase):
     organization_id: str = Field(..., description="The organization this injection state belongs to.")
     world_info_entry_id: str = Field(..., description="The ID of the World Info entry.")
     agent_id: str = Field(..., description="The ID of the agent.")
-    injected_message_id: Optional[str] = Field(None, description="Message ID of the injected system message, if any.")
-    last_processed_run_id: Optional[str] = Field(None, description="Last run ID when counters were decremented.")
     current_cooldown: Optional[int] = Field(None, description="Remaining cooldown runs. NULL or 0 means no cooldown.")
     current_expiration: Optional[int] = Field(None, description="Remaining runs before removal. NULL or 0 means never expire.")
     cooldown_setting: int = Field(..., description="Cooldown setting from WorldInfoEntry (cached).")

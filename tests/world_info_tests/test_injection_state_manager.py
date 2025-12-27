@@ -164,13 +164,11 @@ async def test_update_injection_state(server, default_organization, test_agent):
         injection_state_id=created.id,
         current_cooldown=9,
         current_expiration=19,
-        last_processed_run_id="run-123",
     )
 
     assert updated.id == created.id
     assert updated.current_cooldown == 9
     assert updated.current_expiration == 19
-    assert updated.last_processed_run_id == "run-123"
 
     # Update with None (should convert to NULL)
     updated2 = await manager.update_injection_state(

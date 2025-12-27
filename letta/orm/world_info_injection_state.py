@@ -6,14 +6,14 @@ including cooldown counters and expiration timers.
 """
 
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from letta.orm.mixins import OrganizationMixin
 from letta.orm.sqlalchemy_base import SqlalchemyBase
+from letta.schemas.world_info_injection_state import WorldInfoInjectionState as PydanticWorldInfoInjectionState
 
 if TYPE_CHECKING:
     from letta.orm.agent import Agent
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 class WorldInfoInjectionState(SqlalchemyBase, OrganizationMixin):
     """ORM model for World Info injection state tracking."""
 
+    __pydantic_model__ = PydanticWorldInfoInjectionState
     __tablename__ = "world_info_injection_states"
     __table_args__ = (
         Index("ix_world_info_injection_states_entry_agent", "world_info_entry_id", "agent_id"),
@@ -52,19 +53,6 @@ class WorldInfoInjectionState(SqlalchemyBase, OrganizationMixin):
         doc="ID of the agent this state is for.",
     )
 
-    # Tracking
-    injected_message_id: Mapped[Optional[str]] = mapped_column(
-        String,
-        nullable=True,
-        doc="Message ID of the injected system message, if any.",
-    )
-
-    last_processed_run_id: Mapped[Optional[str]] = mapped_column(
-        String,
-        nullable=True,
-        doc="Last run ID when counters were decremented.",
-    )
-
     # Counters (null = 0 in application logic)
     current_cooldown: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -91,12 +79,6 @@ class WorldInfoInjectionState(SqlalchemyBase, OrganizationMixin):
         doc="Expiration setting from WorldInfoEntry (cached).",
     )
 
-    # Metadata
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, doc="When this state record was created."
-    )
-
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, doc="When this state record was last updated."
-    )
+    # Note: created_at and updated_at are provided automatically by SqlalchemyBase
+    # via CommonSqlalchemyMetaMixins with server_default=func.now()
 

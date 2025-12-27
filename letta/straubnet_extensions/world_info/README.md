@@ -455,6 +455,5 @@ For more details on test patterns, see the Testing section in `AGENTS.md`.
 ## Related Documentation
 
 - **Extension System**: See `../README.md` for information about the extension architecture
-- **Development State**: See `../WORLD_INFO_STATE.md` for implementation details and development status
 - **SillyTavern Reference**: https://docs.sillytavern.app/usage/core-concepts/worldinfo/
 

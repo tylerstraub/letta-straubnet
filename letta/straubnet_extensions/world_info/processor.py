@@ -41,8 +41,11 @@ class WorldInfoProcessor(MessageProcessor):
 
     def __init__(self):
         """Initialize processor with managers."""
+        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
+        
         self.agent_manager = AgentManager()
         self.message_manager = MessageManager()
+        self.injection_state_manager = WorldInfoInjectionStateManager()
 
     def process(
         self,
@@ -69,6 +72,8 @@ class WorldInfoProcessor(MessageProcessor):
             actor = context.get("actor")
             run_id = context.get("run_id")
             
+            logger.debug(f"[World Info] Processing messages for agent {agent_id}, run_id={run_id}")
+            
             if not actor:
                 logger.warning("[World Info] No actor in context, skipping World Info processing")
                 return messages
@@ -79,8 +84,7 @@ class WorldInfoProcessor(MessageProcessor):
                 return messages
 
             # Step 1: UPDATE STATE - decrement counters for all active injections
-            if run_id:
-                self._update_injection_states(agent_id, run_id, actor)
+            self._update_injection_states(agent_id, run_id, actor)
             
             # Step 2: REMOVE EXPIRED - delete messages that hit expiration=0
             self._remove_expired_entries(agent_id, actor)
@@ -90,6 +94,7 @@ class WorldInfoProcessor(MessageProcessor):
             
             # Get World Info entries from database (async operation)
             entries = self._get_entries_sync(organization_id, agent_id)
+            logger.debug(f"[World Info] Retrieved {len(entries)} entries from database for org {organization_id}, agent {agent_id}")
             
             if not entries:
                 logger.debug(f"[World Info] No entries found for organization {organization_id}, agent {agent_id}")
@@ -97,6 +102,7 @@ class WorldInfoProcessor(MessageProcessor):
 
             # Extract text from all messages for keyword matching
             combined_text = self._extract_combined_text(messages)
+            logger.debug(f"[World Info] Extracted text: {combined_text[:100]}..." if combined_text else "[World Info] No text extracted")
             
             if not combined_text:
                 logger.debug("[World Info] No text content in messages, skipping keyword matching")
@@ -104,6 +110,7 @@ class WorldInfoProcessor(MessageProcessor):
 
             # Step 4: MATCH KEYWORDS - find matching WorldInfoEntries
             matched_entries = self._find_matching_entries(entries, combined_text)
+            logger.debug(f"[World Info] Found {len(matched_entries)} matching entries")
 
             if not matched_entries:
                 logger.debug("[World Info] No entries matched keywords in message text")
@@ -128,42 +135,38 @@ class WorldInfoProcessor(MessageProcessor):
     
     def _update_injection_states(self, agent_id: str, run_id: str, actor) -> None:
         """
-        Decrement counters for all active states where last_processed_run_id != run_id.
+        Decrement counters for all active injection states.
         
         Args:
             agent_id: The agent ID
-            run_id: The current run ID
+            run_id: The current run ID (unused, kept for API compatibility)
             actor: The user for permission checking
         """
-        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
-        
-        manager = WorldInfoInjectionStateManager()
-        
         # Get all injection states for this agent
-        states = manager.get_injection_states_by_agent(agent_id, actor=actor)
+        states = self._get_injection_states_sync(agent_id)
+        logger.debug(f"[World Info] Found {len(states)} injection states for agent {agent_id}")
         
         for state in states:
-            if state.last_processed_run_id != run_id:
-                # Decrement counters
-                new_cooldown = None
-                new_expiration = None
-                
-                if state.current_cooldown is not None and state.current_cooldown > 0:
-                    new_cooldown = state.current_cooldown - 1
-                    logger.debug(f"[World Info] State {state.id}: cooldown decremented from {state.current_cooldown} to {new_cooldown}")
-                
-                if state.current_expiration is not None and state.current_expiration > 0:
-                    new_expiration = state.current_expiration - 1
-                    logger.debug(f"[World Info] State {state.id}: expiration decremented from {state.current_expiration} to {new_expiration}")
-                
-                # Update state with new counters and last_processed_run_id
-                manager.update_injection_state(
-                    injection_state_id=state.id,
-                    current_cooldown=new_cooldown,
-                    current_expiration=new_expiration,
-                    last_processed_run_id=run_id,
-                    actor=actor
-                )
+            logger.debug(f"[World Info] Checking state {state.id}: cooldown={state.current_cooldown}, expiration={state.current_expiration}")
+            # Decrement counters
+            new_cooldown = None
+            new_expiration = None
+            
+            if state.current_cooldown is not None and state.current_cooldown > 0:
+                new_cooldown = state.current_cooldown - 1
+                logger.debug(f"[World Info] State {state.id}: cooldown decremented from {state.current_cooldown} to {new_cooldown}")
+            
+            if state.current_expiration is not None and state.current_expiration > 0:
+                new_expiration = state.current_expiration - 1
+                logger.debug(f"[World Info] State {state.id}: expiration decremented from {state.current_expiration} to {new_expiration}")
+            
+            # Update state with new counters
+            self._update_injection_state_sync(
+                self.injection_state_manager, state.id,
+                current_cooldown=new_cooldown,
+                current_expiration=new_expiration,
+                actor=actor
+            )
     
     def _remove_expired_entries(self, agent_id: str, actor) -> None:
         """
@@ -173,48 +176,70 @@ class WorldInfoProcessor(MessageProcessor):
             agent_id: The agent ID
             actor: The user for permission checking
         """
-        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
-        from letta.orm.world_info_injection_state import WorldInfoInjectionState
-        from letta.db import db
-        from sqlalchemy import and_
+        # Get all injection states for this agent
+        states = self._get_injection_states_sync(agent_id)
+        logger.debug(f"[World Info] Checking {len(states)} states for expired entries")
         
-        manager = WorldInfoInjectionStateManager()
+        # Filter for expired states (expiration = 0 or None, meaning expired)
+        expired_states = [
+            state for state in states
+            if state.current_expiration is None or state.current_expiration == 0
+        ]
+        logger.debug(f"[World Info] Found {len(expired_states)} expired states (expiration is None or 0)")
         
-        # Find expired states (expiration = 0)
-        with db.async_session() as session:
-            expired_states = session.query(WorldInfoInjectionState).filter(
-                WorldInfoInjectionState.agent_id == agent_id,
-                WorldInfoInjectionState.current_expiration == 0,
-                WorldInfoInjectionState.injected_message_id.isnot(None)
-            ).all()
+        if not expired_states:
+            return
+        
+        # Get agent's current message_ids and fetch the messages
+        agent = self._get_agent_by_id_sync(agent_id, actor)
+        if not agent or not agent.message_ids:
+            logger.debug(f"[World Info] Agent {agent_id} has no messages in context")
+            return
+        
+        # Fetch all messages to match by name field
+        messages = self._get_messages_by_ids_sync(agent.message_ids, actor)
+        logger.debug(f"[World Info] Fetched {len(messages)} messages from agent context")
+        message_by_name = {msg.name: msg for msg in messages if msg.name and msg.name.startswith("world-info-")}
+        logger.debug(f"[World Info] Found {len(message_by_name)} messages with world-info name markers: {list(message_by_name.keys())}")
+        
+        # Process each expired state
+        message_ids_to_remove = []
+        for state in expired_states:
+            try:
+                # Match message by name field (format: "world-info-{entry.id}")
+                expected_name = f"world-info-{state.world_info_entry_id}"
+                matched_message = message_by_name.get(expected_name)
+                
+                if matched_message:
+                    message_ids_to_remove.append(matched_message.id)
+                    logger.debug(f"[World Info] Found expired message {matched_message.id} for entry {state.world_info_entry_id} (name={expected_name})")
+                else:
+                    logger.debug(f"[World Info] No message found with name {expected_name} for expired state {state.id}")
+                    
+            except Exception as e:
+                logger.error(f"[World Info] Error processing expired state {state.id}: {e}", exc_info=True)
+        
+        # Remove all matched messages from context in one update
+        if message_ids_to_remove:
+            new_message_ids = [msg_id for msg_id in agent.message_ids if msg_id not in message_ids_to_remove]
             
-            for state in expired_states:
-                try:
-                    # Get agent's current message_ids
-                    agent = self.agent_manager.get_agent_by_id(agent_id=agent_id, actor=actor)
-                    
-                    # Remove message from context if still present
-                    if state.injected_message_id in agent.message_ids:
-                        new_message_ids = [msg_id for msg_id in agent.message_ids if msg_id != state.injected_message_id]
-                        
-                        # Update agent's message_ids
-                        self.agent_manager.update_message_ids(
-                            agent_id=agent_id,
-                            message_ids=new_message_ids,
-                            actor=actor
-                        )
-                        logger.info(f"[World Info] Removed expired injection message {state.injected_message_id} from context")
-                    else:
-                        logger.debug(f"[World Info] Message {state.injected_message_id} already removed from context")
-                    
-                    # Clear injected_message_id from state
-                    manager.update_injection_state(
-                        injection_state_id=state.id,
-                        injected_message_id=None,
-                        actor=actor
-                    )
-                except Exception as e:
-                    logger.error(f"[World Info] Error removing expired entry {state.id}: {e}", exc_info=True)
+            # Update agent's message_ids
+            self._update_message_ids_sync(agent_id, new_message_ids, actor)
+            logger.info(f"[World Info] Removed {len(message_ids_to_remove)} expired injection messages from context: {message_ids_to_remove}")
+    
+    def _is_state_complete(self, state) -> bool:
+        """
+        Check if a state is complete (both cooldown and expiration at 0 or None).
+        
+        Args:
+            state: Injection state to check
+            
+        Returns:
+            True if state is complete, False otherwise
+        """
+        cooldown_complete = state.current_cooldown is None or state.current_cooldown == 0
+        expiration_complete = state.current_expiration is None or state.current_expiration == 0
+        return cooldown_complete and expiration_complete
     
     def _cleanup_completed_states(self, agent_id: str, actor) -> None:
         """
@@ -224,25 +249,15 @@ class WorldInfoProcessor(MessageProcessor):
             agent_id: The agent ID
             actor: The user for permission checking
         """
-        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
-        
-        manager = WorldInfoInjectionStateManager()
-        
         # Get all states for this agent
-        states = manager.get_injection_states_by_agent(agent_id, actor=actor)
+        states = self._get_injection_states_sync(agent_id)
         
         for state in states:
-            # Check if state is complete (both counters at 0 or None)
-            cooldown_complete = state.current_cooldown is None or state.current_cooldown == 0
-            expiration_complete = state.current_expiration is None or state.current_expiration == 0
-            
-            if cooldown_complete and expiration_complete:
-                # Also ensure message_id is cleared (already removed from context)
-                if state.injected_message_id is None:
-                    logger.debug(f"[World Info] Deleting completed state {state.id}")
-                    manager.delete_injection_state(state.id, actor=actor)
-                else:
-                    logger.debug(f"[World Info] State {state.id} has completed but message_id still set, waiting for removal")
+            if self._is_state_complete(state):
+                # Both counters are done - delete the state
+                # Note: With the new name-based matching, we don't rely on injected_message_id anymore
+                logger.info(f"[World Info] Deleting completed state {state.id} (both cooldown and expiration are None/0)")
+                self._delete_injection_state_sync(self.injection_state_manager, state.id)
     
     def _should_inject(self, entry, agent_id: str, actor) -> bool:
         """
@@ -256,8 +271,6 @@ class WorldInfoProcessor(MessageProcessor):
         Returns:
             True if entry should be injected, False otherwise
         """
-        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
-        
         # If both cooldown and expiration are 0/None, inject freely (current behavior)
         entry_cooldown = entry.cooldown or 0
         entry_expiration = entry.expiration or 0
@@ -265,8 +278,7 @@ class WorldInfoProcessor(MessageProcessor):
             return True
         
         # Check if already injected and still in cooldown
-        manager = WorldInfoInjectionStateManager()
-        existing_state = manager.get_injection_state_by_entry(entry.id, agent_id, actor=actor)
+        existing_state = self._get_injection_state_by_entry_sync(entry.id, agent_id)
         
         if existing_state:
             # Check if cooldown is still active
@@ -279,10 +291,9 @@ class WorldInfoProcessor(MessageProcessor):
                 logger.debug(f"[World Info] Entry {entry.id} still in context ({existing_state.current_expiration} runs remaining)")
                 return False
         
-            # Cooldown complete but state record exists - delete it and allow re-injection
-            if existing_state.current_cooldown is None or existing_state.current_cooldown == 0:
-                logger.debug(f"[World Info] Entry {entry.id} cooldown complete, removing old state and allowing re-injection")
-                manager.delete_injection_state(existing_state.id, actor=actor)
+            # State should have been cleaned up by _cleanup_completed_states(), but if it hasn't,
+            # we still check if it's complete to avoid re-injection during cooldown/expiration
+            # Note: Actual deletion happens in _cleanup_completed_states() to avoid redundant operations
         
         return True
     
@@ -301,9 +312,6 @@ class WorldInfoProcessor(MessageProcessor):
         Returns:
             List of system messages to inject
         """
-        from letta.services.world_info_injection_state_manager import WorldInfoInjectionStateManager
-        
-        manager = WorldInfoInjectionStateManager()
         system_messages = []
         
         for entry in entries:
@@ -311,56 +319,37 @@ class WorldInfoProcessor(MessageProcessor):
             if not self._should_inject(entry, agent_id, actor):
                 continue
             
-            # Create system message
+            # Create system message with name marker for tracking (name field is not sent to LLM for system messages)
+            name_marker = f"world-info-{entry.id}"
             system_message = MessageCreate(
                 role=MessageRole.system,
-                content=[TextContent(text=entry.content)]
+                content=[TextContent(text=entry.content)],
+                name=name_marker
             )
             system_messages.append(system_message)
+            logger.debug(f"[World Info] Created system message for entry {entry.id} with name marker: {name_marker}")
             
             # Create state record if needed
             entry_cooldown = entry.cooldown or 0
             entry_expiration = entry.expiration or 0
             
             if entry_cooldown > 0 or entry_expiration > 0:
-                state = manager.create_injection_state(
+                state = self._create_injection_state_sync(
+                    self.injection_state_manager,
                     world_info_entry_id=entry.id,
                     agent_id=agent_id,
                     current_cooldown=entry_cooldown if entry_cooldown > 0 else None,
                     current_expiration=entry_expiration if entry_expiration > 0 else None,
                     cooldown_setting=entry_cooldown,
                     expiration_setting=entry_expiration,
-                    last_processed_run_id=run_id,
+                    organization_id=actor.organization_id,
                     actor=actor
                 )
-                logger.info(
-                    f"[World Info] Created injection state for entry {entry.id}: "
-                    f"cooldown={entry_cooldown}, expiration={entry_expiration}"
-                )
-        
-        return system_messages
-    
-    def _create_system_messages(self, entries: List) -> List[MessageCreate]:
-        """
-        Create system messages from World Info entries.
-        
-        This is now handled by _inject_entries, kept for backward compatibility.
-        
-        Args:
-            entries: List of WorldInfoEntry objects (already ordered by insertion_order ASC)
-                     Lower numbers first (injected earlier, further from user), higher numbers last (closer to user)
-        
-        Returns:
-            List of MessageCreate objects with role=system
-        """
-        system_messages = []
-        for entry in entries:
-            system_message = MessageCreate(
-                role=MessageRole.system,
-                content=[TextContent(text=entry.content)],
-            )
-            system_messages.append(system_message)
-            logger.debug(f"[World Info] Created system message from entry '{entry.id}' (insertion_order={entry.insertion_order})")
+                if state:
+                    logger.info(
+                        f"[World Info] Created injection state for entry {entry.id}: "
+                        f"cooldown={entry_cooldown}, expiration={entry_expiration}"
+                    )
         
         return system_messages
 
@@ -415,6 +404,178 @@ class WorldInfoProcessor(MessageProcessor):
         async with db_registry.async_session() as session:
             return await get_world_info_entries(session, organization_id, agent_id)
 
+    def _get_injection_states_sync(self, agent_id: str) -> List:
+        """
+        Get injection states for an agent (synchronous wrapper for async operation).
+        
+        Args:
+            agent_id: The agent ID
+            
+        Returns:
+            List of injection states
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(self.injection_state_manager.get_injection_states_by_agent(agent_id))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return []
+        except Exception as e:
+            logger.error(f"[World Info] Error getting injection states: {e}", exc_info=True)
+            return []
+
+    def _get_injection_state_by_entry_sync(self, world_info_entry_id: str, agent_id: str):
+        """
+        Get injection state for a specific entry and agent (synchronous wrapper).
+        
+        Args:
+            world_info_entry_id: The World Info entry ID
+            agent_id: The agent ID
+            
+        Returns:
+            Injection state if found, None otherwise
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(self.injection_state_manager.get_injection_state_by_entry(world_info_entry_id, agent_id))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"[World Info] Error getting injection state: {e}", exc_info=True)
+            return None
+
+    def _update_injection_state_sync(self, manager, injection_state_id: str, **kwargs):
+        """
+        Update an injection state (synchronous wrapper).
+        
+        Args:
+            manager: WorldInfoInjectionStateManager instance
+            injection_state_id: The injection state ID
+            **kwargs: Fields to update (current_cooldown, current_expiration, optional actor)
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(manager.update_injection_state(injection_state_id, **kwargs))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"[World Info] Error updating injection state: {e}", exc_info=True)
+            return None
+
+    def _create_injection_state_sync(self, manager, **kwargs):
+        """
+        Create an injection state (synchronous wrapper).
+        
+        Args:
+            manager: WorldInfoInjectionStateManager instance
+            **kwargs: Fields for the new state (including optional actor parameter)
+            
+        Returns:
+            Created injection state
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(manager.create_injection_state(**kwargs))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"[World Info] Error creating injection state: {e}", exc_info=True)
+            return None
+
+    def _delete_injection_state_sync(self, manager, injection_state_id: str):
+        """
+        Delete an injection state (synchronous wrapper).
+        
+        Args:
+            manager: WorldInfoInjectionStateManager instance
+            injection_state_id: The injection state ID
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(manager.delete_injection_state(injection_state_id))
+            )
+            future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+        except Exception as e:
+            logger.error(f"[World Info] Error deleting injection state: {e}", exc_info=True)
+
+    def _get_agent_by_id_sync(self, agent_id: str, actor) -> Optional:
+        """
+        Get agent by ID (synchronous wrapper for async operation).
+        
+        Args:
+            agent_id: The agent ID
+            actor: The user for permission checking
+            
+        Returns:
+            PydanticAgentState or None if not found
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(self.agent_manager.get_agent_by_id_async(agent_id, actor))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return None
+        except Exception as e:
+            logger.error(f"[World Info] Error getting agent by ID: {e}", exc_info=True)
+            return None
+
+    def _update_message_ids_sync(self, agent_id: str, message_ids: List[str], actor) -> None:
+        """
+        Update agent's message IDs (synchronous wrapper for async operation).
+        
+        Args:
+            agent_id: The agent ID
+            message_ids: New list of message IDs
+            actor: The user for permission checking
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(self.agent_manager.update_message_ids_async(agent_id, message_ids, actor))
+            )
+            future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+        except Exception as e:
+            logger.error(f"[World Info] Error updating message IDs: {e}", exc_info=True)
+
+    def _get_messages_by_ids_sync(self, message_ids: List[str], actor) -> List:
+        """
+        Get messages by IDs (synchronous wrapper for async operation).
+        
+        Args:
+            message_ids: List of message IDs to fetch
+            actor: The user for permission checking
+            
+        Returns:
+            List of PydanticMessage objects
+        """
+        try:
+            future = _executor.submit(
+                lambda: asyncio.run(self.message_manager.get_messages_by_ids_async(message_ids, actor))
+            )
+            return future.result(timeout=10.0)
+        except TimeoutError:
+            logger.error("[World Info] Database query timed out after 10 seconds")
+            return []
+        except Exception as e:
+            logger.error(f"[World Info] Error getting messages by IDs: {e}", exc_info=True)
+            return []
+
     def _extract_combined_text(self, messages: List[MessageCreate]) -> str:
         """
         Extract and combine text from all messages.
@@ -461,26 +622,4 @@ class WorldInfoProcessor(MessageProcessor):
                 )
         
         return matched
-
-    def _create_system_messages(self, entries: List) -> List[MessageCreate]:
-        """
-        Create system messages from World Info entries.
-
-        Args:
-            entries: List of WorldInfoEntry objects (already ordered by insertion_order ASC)
-                     Lower numbers first (injected earlier, further from user), higher numbers last (closer to user)
-
-        Returns:
-            List of MessageCreate objects with role=system
-        """
-        system_messages = []
-        for entry in entries:
-            system_message = MessageCreate(
-                role=MessageRole.system,
-                content=entry.content,
-            )
-            system_messages.append(system_message)
-            logger.debug(f"[World Info] Created system message from entry '{entry.id}' (insertion_order={entry.insertion_order})")
-        
-        return system_messages
 

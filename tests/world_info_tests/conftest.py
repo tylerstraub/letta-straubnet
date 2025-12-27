@@ -94,8 +94,6 @@ class WorldInfoClient:
                 "agent_id": state.agent_id,
                 "current_cooldown": state.current_cooldown,
                 "current_expiration": state.current_expiration,
-                "last_processed_run_id": state.last_processed_run_id,
-                "injected_message_id": state.injected_message_id,
                 "cooldown_setting": state.cooldown_setting,
                 "expiration_setting": state.expiration_setting,
             }

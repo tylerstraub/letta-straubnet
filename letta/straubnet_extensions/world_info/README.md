@@ -48,7 +48,7 @@ world_info/
 **Storage** (`storage.py`):
 - Queries World Info entries from the database
 - Filters by organization, agent, and enabled status
-- Orders entries by `insertion_order` (higher priority first)
+- Orders entries by `insertion_order` ASC (lower values first, higher values last)
 
 **Processor** (`processor.py`):
 - Orchestrates the entire flow
@@ -66,12 +66,11 @@ The `world_info_entries` table stores all World Info entries:
 | `organization_id` | String (FK) | Organization this entry belongs to |
 | `keywords` | JSON | List of keywords/regex patterns (currently just keywords) |
 | `content` | String | The content to inject when keywords are matched |
-| `insertion_order` | Integer | Priority (higher = inserted later/closer to end of context) |
+| `insertion_order` | Integer | Priority (lower values = injected earlier/further from user, higher values = injected later/closer to user) |
 | `agent_id` | String (FK, nullable) | Optional agent ID. NULL = global entry (applies to all agents) |
 | `enabled` | Boolean | Whether this entry is active and should be checked |
 | `case_sensitive` | Boolean | Whether keyword matching should be case-sensitive |
-| `match_whole_words` | Boolean | Whether keywords should match whole words only (schema ready, not yet implemented) |
-| `scan_depth` | Integer (nullable) | How many messages back to scan (NULL = global default, not yet used) |
+| `match_whole_words` | Boolean | Whether keywords should match whole words only (using word boundaries) |
 | Standard ORM fields | | `created_at`, `updated_at`, `is_deleted`, `_created_by_id`, etc. |
 
 **Indexes**:
@@ -123,8 +122,7 @@ Creates a new World Info entry.
   "agent_id": "agent-123",  // Optional: omit for global entry
   "enabled": true,
   "case_sensitive": false,
-  "match_whole_words": true,
-  "scan_depth": null
+  "match_whole_words": true
 }
 ```
 
@@ -157,7 +155,7 @@ GET /v1/world-info/?enabled=true
 GET /v1/world-info/?agent_id=agent-123&enabled=true
 ```
 
-**Response**: `200 OK` with array of entries, ordered by `insertion_order` DESC (higher priority first)
+**Response**: `200 OK` with array of entries, ordered by `insertion_order` ASC (lower values first, higher values last)
 
 #### Retrieve Entry
 
@@ -270,17 +268,17 @@ This entry will only activate for `agent-123`, not for other agents.
 
 ### Priority/Insertion Order
 
-Entries with higher `insertion_order` values are inserted later (closer to the end of the context):
+Entries with **higher** `insertion_order` values are injected **later** (closer to the user message):
 
 ```json
-// Lower priority (inserted first)
+// Lower insertion_order (injected earlier, further from user)
 {
   "keywords": ["character"],
   "content": "General character information",
   "insertion_order": 50
 }
 
-// Higher priority (inserted later, closer to user message)
+// Higher insertion_order (injected later, closer to user)
 {
   "keywords": ["character", "personality"],
   "content": "Specific personality traits",
@@ -289,8 +287,8 @@ Entries with higher `insertion_order` values are inserted later (closer to the e
 ```
 
 When both entries match, the system will inject:
-1. General character information (order 50)
-2. Specific personality traits (order 150)
+1. General character information (order 50) ← Injected first, furthest from user
+2. Specific personality traits (order 150) ← Injected later, closer to user
 3. User message
 
 This ensures more specific/important information appears closer to the user's message, which typically has more influence on the agent's response.
@@ -299,15 +297,13 @@ This ensures more specific/important information appears closer to the user's me
 
 ### Matching Behavior
 
-- **Substring matching only** - Keywords match as substrings (e.g., "dog" matches "hotdog")
-- **No whole-word matching yet** - The `match_whole_words` field exists in the schema but is not yet implemented
+- **Substring or whole-word matching** - Keywords can match as substrings OR whole words (controlled by `match_whole_words` flag)
 - **No regex support yet** - Keywords are treated as plain strings, not regex patterns
 - **Case sensitivity** - Supported via `case_sensitive` flag (defaults to `false`)
 
 ### Message History
 
 - **Current messages only** - Only scans the current message batch, not conversation history
-- **No scan_depth implementation** - The `scan_depth` field exists but is not yet used
 
 ### Content Format
 
@@ -319,12 +315,12 @@ This ensures more specific/important information appears closer to the user's me
 Planned improvements:
 
 1. **Regex Pattern Support** - Allow keywords to be regex patterns for more flexible matching
-2. **Whole-Word Matching** - Implement the `match_whole_words` option to avoid substring false positives
-3. **Message History Scanning** - Implement `scan_depth` to scan previous messages in the conversation
-4. **Template Variables** - Support variables in content that can reference message content
-5. **Vector/Embedding Matching** - Semantic similarity matching in addition to keyword matching
-6. **Recursive Activation** - Entries that trigger other entries
-7. **Conditional Activation** - Entries that only activate under certain conditions (time-based, state-based, etc.)
+2. **Template Variables** - Support variables in content that can reference message content the `match_whole_words` option to avoid substring false positives
+3. **Message History Scanning** - Scan previous messages in the conversation (not currently implemented)
+4. **Vector/Embedding Matching** - Semantic similarity matching in addition to keyword matching
+5. **Recursive Activation** - Entries that trigger other entries
+6. **Conditional Activation** - Entries that only activate under certain conditions (time-based, state-based, etc.)
+
 
 ## Performance Considerations
 
@@ -373,7 +369,7 @@ SELECT id, keywords, content, enabled, agent_id, insertion_order
 FROM world_info_entries 
 WHERE organization_id = 'your-org-id' 
   AND is_deleted = false
-ORDER BY insertion_order DESC;
+ORDER BY insertion_order ASC;
 
 -- List entries for a specific agent
 SELECT * FROM world_info_entries 

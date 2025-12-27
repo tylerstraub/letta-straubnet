@@ -24,7 +24,8 @@ async def get_world_info_entries(
       - If agent_id is provided: returns entries where agent_id == agent_id OR agent_id IS NULL
         (agent-specific entries + global entries)
       - If agent_id is None: returns only global entries (agent_id IS NULL)
-    - Ordered by insertion_order DESC (higher priority entries first, then lower)
+    - Ordered by insertion_order ASC (lower numbers first, then higher)
+      Lower numbers = injected earlier (further from user), higher numbers = injected later (closer to user)
 
     Args:
         session: SQLAlchemy async session
@@ -58,8 +59,9 @@ async def get_world_info_entries(
         # Only get global entries (no agent_id)
         query = query.where(WorldInfoEntry.agent_id.is_(None))
 
-    # Order by insertion_order DESC (higher numbers = higher priority = inserted later)
-    query = query.order_by(WorldInfoEntry.insertion_order.desc())
+    # Order by insertion_order ASC (lower numbers = higher priority = injected earlier, further from user)
+    # Higher insertion_order values appear closer to the user message (injected later in the system message block)
+    query = query.order_by(WorldInfoEntry.insertion_order.asc())
 
     # Execute query
     result = await session.execute(query)

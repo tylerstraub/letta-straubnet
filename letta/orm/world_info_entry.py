@@ -42,7 +42,7 @@ class WorldInfoEntry(SqlalchemyBase, OrganizationMixin):
     insertion_order: Mapped[int] = mapped_column(
         Integer,
         default=100,
-        doc="Priority/order for insertion. Higher numbers are inserted later (closer to end of context).",
+        doc="Priority/order for insertion. Lower values are injected earlier (further from user message), higher values are injected later (closer to user message).",
     )
 
     agent_id: Mapped[Optional[str]] = mapped_column(
@@ -68,11 +68,5 @@ class WorldInfoEntry(SqlalchemyBase, OrganizationMixin):
         Boolean,
         default=True,
         doc="Whether keywords should match whole words only (word boundaries).",
-    )
-
-    scan_depth: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        nullable=True,
-        doc="How many messages back to scan. If None, uses global default.",
     )
 

@@ -29,6 +29,7 @@ class WorldInfoProcessor(MessageProcessor):
     2. Extracts text from incoming messages
     3. Matches keywords against the text
     4. Injects matched entries as system messages, ordered by insertion_order
+       (lower values first = further from user, higher values last = closer to user)
     """
 
     def process(
@@ -85,7 +86,8 @@ class WorldInfoProcessor(MessageProcessor):
                 return messages
 
             # Create system messages from matched entries
-            # Entries are already ordered by insertion_order DESC from storage layer
+            # Entries are already ordered by insertion_order ASC from storage layer
+            # Lower numbers first (injected earlier, further from user), higher numbers last (closer to user)
             system_messages = self._create_system_messages(matched_entries)
 
             # Inject system messages at the beginning (before user messages)
@@ -176,7 +178,8 @@ class WorldInfoProcessor(MessageProcessor):
             text: Text to match against
 
         Returns:
-            List of matching WorldInfoEntry objects (ordered by insertion_order DESC)
+            List of matching WorldInfoEntry objects (ordered by insertion_order ASC)
+            Lower numbers first (injected earlier, further from user), higher numbers last (closer to user)
         """
         matched = []
         for entry in entries:
@@ -200,7 +203,8 @@ class WorldInfoProcessor(MessageProcessor):
         Create system messages from World Info entries.
 
         Args:
-            entries: List of WorldInfoEntry objects (already ordered by insertion_order DESC)
+            entries: List of WorldInfoEntry objects (already ordered by insertion_order ASC)
+                     Lower numbers first (injected earlier, further from user), higher numbers last (closer to user)
 
         Returns:
             List of MessageCreate objects with role=system

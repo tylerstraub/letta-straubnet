@@ -22,7 +22,7 @@ class WorldInfoEntryBase(OrmMetadataBase):
     content: str = Field(..., description="The content to inject when keywords are matched.")
     insertion_order: int = Field(
         default=100,
-        description="Priority/order for insertion. Higher numbers are inserted later (closer to end of context).",
+        description="Priority/order for insertion. Lower values are injected earlier (further from user message), higher values are injected later (closer to user message).",
     )
     agent_id: Optional[str] = Field(
         default=None,
@@ -36,10 +36,6 @@ class WorldInfoEntryBase(OrmMetadataBase):
     match_whole_words: bool = Field(
         default=True,
         description="Whether keywords should match whole words only (word boundaries).",
-    )
-    scan_depth: Optional[int] = Field(
-        default=None,
-        description="How many messages back to scan. If None, uses global default.",
     )
 
 
@@ -75,5 +71,4 @@ class WorldInfoEntryUpdate(OrmMetadataBase):
     enabled: Optional[bool] = Field(None, description="Whether this entry is enabled.")
     case_sensitive: Optional[bool] = Field(None, description="Whether keyword matching should be case-sensitive.")
     match_whole_words: Optional[bool] = Field(None, description="Whether keywords should match whole words only.")
-    scan_depth: Optional[int] = Field(None, description="How many messages back to scan.")
 

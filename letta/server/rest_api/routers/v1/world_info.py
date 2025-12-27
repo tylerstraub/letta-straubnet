@@ -118,8 +118,8 @@ async def list_world_info_entries(
             # Only get global entries (no agent_id)
             query = query.where(WorldInfoEntryModel.agent_id.is_(None))
 
-        # Order by insertion_order DESC (higher numbers = higher priority = inserted later)
-        query = query.order_by(WorldInfoEntryModel.insertion_order.desc())
+        # Order by insertion_order ASC (lower numbers = injected earlier/further from user, higher numbers = injected later/closer to user)
+        query = query.order_by(WorldInfoEntryModel.insertion_order.asc())
 
         # Execute query
         result = await session.execute(query)

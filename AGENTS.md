@@ -124,7 +124,7 @@ Currently extensions are in `letta/straubnet_extensions/` due to container mount
   2. **Before running migrations or using in instances**: Merge `feat/world-info` → `main_straubnet`
   3. Code must exist on `main_straubnet` to be used by running instances
 - **Commit conventions**: Use `feat(straubnet):` prefix for World Info enhancements
-  - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): implement scan_depth for World Info`
+  - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): enhance keyword matching`
 - **Commit strategy**: Incremental commits as features are added/extended (not monolithic)
 - **Current status**: World Info foundation merged to `main_straubnet` (commit `9ea99b87d`)
 

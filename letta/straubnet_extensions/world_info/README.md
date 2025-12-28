@@ -71,6 +71,8 @@ The `world_info_entries` table stores all World Info entries:
 | `enabled` | Boolean | Whether this entry is active and should be checked |
 | `case_sensitive` | Boolean | Whether keyword matching should be case-sensitive |
 | `match_whole_words` | Boolean | Whether keywords should match whole words only (using word boundaries) |
+| `cooldown` | Integer (nullable) | Number of runs to wait before entry can be injected again. NULL or 0 = no cooldown |
+| `expiration` | Integer (nullable) | Number of runs before entry should be removed from context. NULL or 0 = never expire |
 | Standard ORM fields | | `created_at`, `updated_at`, `is_deleted`, `_created_by_id`, etc. |
 
 **Indexes**:
@@ -95,7 +97,14 @@ This allows you to have organization-wide entries that apply to all agents, plus
 
 ## REST API
 
-The World Info system provides a full CRUD API at `/v1/world-info/`.
+The World Info system provides a full CRUD API at `/v1/world-info/` implemented using the `WorldInfoManager` pattern following Letta conventions.
+
+### Architecture
+
+The API layer uses `WorldInfoManager` (`letta/services/world_info_manager.py`) which encapsulates all business logic:
+- CRUD operations: `list_entries_async()`, `get_entry_async()`, `create_entry_async()`, `update_entry_async()`, `delete_entry_async()`
+- State queries: `get_entries_with_state_async()` for frontend polling
+- All methods follow Letta patterns with `@enforce_types` and `@trace_method` decorators
 
 ### Authentication
 
@@ -193,6 +202,48 @@ Deletes a World Info entry (hard delete).
 
 **Response**: `204 No Content` on success, or `404 Not Found` if the entry doesn't exist
 
+#### Get Entries with State
+
+**GET** `/v1/world-info/agent/{agent_id}/state`
+
+Get World Info entries for an agent with their current runtime state (cooldown/expiration counters). This endpoint is optimized for frequent polling by frontends.
+
+**Response**: `200 OK` with `WorldInfoEntriesStateResponse`:
+```json
+{
+  "entries": [
+    {
+      "entry": {
+        "id": "world-info-entry-...",
+        "keywords": ["test"],
+        "content": "Test content",
+        ...
+      },
+      "state": {
+        "current_cooldown": 3,
+        "current_expiration": 8,
+        "is_active": true,
+        "cooldown_setting": 5,
+        "expiration_setting": 10
+      }
+    },
+    {
+      "entry": {...},
+      "state": null  // Entry not currently active (no injection state)
+    }
+  ]
+}
+```
+
+**State Fields**:
+- `current_cooldown`: Remaining cooldown runs (None if not active or no cooldown)
+- `current_expiration`: Remaining runs before removal (None if not active or no expiration)
+- `is_active`: Whether entry is currently active (has injection state)
+- `cooldown_setting`: Cooldown setting from entry (cached, None if not active)
+- `expiration_setting`: Expiration setting from entry (cached, None if not active)
+
+**Note**: Entries that haven't been injected yet will have `state: null`. States are created when entries are matched and injected by the processor.
+
 ### Example API Usage
 
 ```bash
@@ -224,6 +275,11 @@ curl -X PATCH "http://localhost:8283/v1/world-info/world-info-entry-abc123" \
 
 # Delete an entry
 curl -X DELETE "http://localhost:8283/v1/world-info/world-info-entry-abc123" \
+  -H "user_id: user-123" \
+  -H "Authorization: Bearer your-password"
+
+# Get entries with state for an agent
+curl -X GET "http://localhost:8283/v1/world-info/agent/agent-123/state" \
   -H "user_id: user-123" \
   -H "Authorization: Bearer your-password"
 ```
@@ -312,11 +368,11 @@ This ensures more specific/important information appears closer to the user's me
 
 ## Future Enhancements
 
-Planned improvements:
+Potential improvements (not currently implemented):
 
 1. **Regex Pattern Support** - Allow keywords to be regex patterns for more flexible matching
-2. **Template Variables** - Support variables in content that can reference message content the `match_whole_words` option to avoid substring false positives
-3. **Message History Scanning** - Scan previous messages in the conversation (not currently implemented)
+2. **Template Variables** - Support variables in content that can reference message content
+3. **Message History Scanning** - Scan previous messages in the conversation (currently only scans current message batch)
 4. **Vector/Embedding Matching** - Semantic similarity matching in addition to keyword matching
 5. **Recursive Activation** - Entries that trigger other entries
 6. **Conditional Activation** - Entries that only activate under certain conditions (time-based, state-based, etc.)
@@ -381,74 +437,61 @@ WHERE organization_id = 'your-org-id'
 
 ## Testing
 
-The World Info system includes minimal foundation tests in `tests/world_info_tests/` that focus on essential CRUD operations and core functionality for health checks and regression testing.
+The World Info system includes comprehensive test coverage with both manager and API tests.
 
 ### Running Tests
 
 ```bash
-# Run all World Info tests
-pytest tests/world_info_tests/ -v
+# Run all World Info tests (manager + API)
+pytest tests/managers/test_world_info_manager.py tests/world_info_tests/test_world_info_api.py -v
 
-# Run the core API tests
+# Run manager tests only
+pytest tests/managers/test_world_info_manager.py -v
+
+# Run API tests only
 pytest tests/world_info_tests/test_world_info_api.py -v
 
-# Run a specific test
-pytest tests/world_info_tests/test_world_info_api.py::test_create_entry -v
-
-# Run tests from container
-podman exec letta-atlas bash -c "cd /app && pytest tests/world_info_tests/ -v"
+# Run from container
+podman exec letta-atlas bash -c "cd /app && pytest tests/managers/test_world_info_manager.py tests/world_info_tests/test_world_info_api.py -v"
 ```
 
 ### Test Coverage
 
-The foundation tests cover essential functionality:
-- **Create Entry** - POST endpoint for creating entries
-- **List Entries** - GET endpoint for listing entries
-- **Get by ID** - Retrieving specific entries
-- **Update Entry** - PATCH endpoint for updating entries
-- **Delete Entry** - DELETE endpoint with verification
-- **Agent Scoping** - Global vs agent-specific entry filtering
-- **Enabled/Disabled** - Entry filtering by enabled status
+**Manager Tests** (`tests/managers/test_world_info_manager.py`):
+- CRUD operations via `WorldInfoManager`
+- Agent scoping (global vs agent-specific)
+- Filtering (enabled/disabled, agent_id)
+- State queries (`get_entries_with_state_async()`)
+- Access control and error handling
+
+**API Tests** (`tests/world_info_tests/test_world_info_api.py`):
+- All REST endpoints (create, list, get, update, delete)
+- State endpoint (`GET /v1/world-info/agent/{agent_id}/state`)
+- Agent scoping via HTTP
+- Enabled/disabled filtering via query parameters
 
 ### Test Architecture
 
-The test suite is organized in a subdirectory structure following the pattern used by `tests/managers/`:
+The test suite follows Letta's established patterns with separation between manager and API tests:
 
-**Structure:**
-```
-tests/world_info_tests/
-├── conftest.py              # Shared fixtures (WorldInfoClient, test_agent)
-├── test_world_info_api.py   # Core API tests (minimal, essential only)
-└── test_world_info_matcher.py.example  # Example template for detailed tests
-```
+**Manager Tests** (`tests/managers/test_world_info_manager.py`):
+- Direct manager method calls using `server` and `default_user` fixtures
+- Tests business logic in isolation
+- Uses fixtures from `tests/managers/conftest.py`
+
+**API Tests** (`tests/world_info_tests/test_world_info_api.py`):
+- HTTP endpoint testing via `WorldInfoClient` helper
+- Tests HTTP layer, status codes, response formats
+- Uses fixtures from `tests/world_info_tests/conftest.py`
 
 **Helper Classes:**
-- `WorldInfoClient` - Encapsulates all World Info API operations (create, list, get, update, delete)
+- `WorldInfoClient` (in `tests/world_info_tests/conftest.py`) - Encapsulates API operations
+  - Methods: `create_entry()`, `list_entries()`, `get_entry()`, `update_entry()`, `delete_entry()`, `get_entries_state()`
   - Centralizes endpoint changes and error handling
-  - Provides clean API: `client.create_entry(data)` instead of manual HTTP requests
 
-**Fixtures (in conftest.py):**
-- `world_info_client` - Provides a `WorldInfoClient` instance configured for the test user
-- `test_agent` - Creates a test agent for agent-specific entry tests with automatic cleanup
-
-**Test Structure Example:**
-```python
-@pytest.mark.asyncio
-async def test_create_entry(world_info_client, default_user):
-    entry_data = {
-        "keywords": ["test", "keyword"],
-        "content": "Test content",
-    }
-    entry = world_info_client.create_entry(entry_data)
-    assert entry["keywords"] == entry_data["keywords"]
-    assert entry["content"] == entry_data["content"]
-```
-
-**Benefits:**
-- **Minimal and focused** - Only essential tests for health checks and regression testing
-- **Scalable structure** - Easy to add detailed test files for specific components as needed
-- **Shared fixtures** - Common fixtures available to all test files via `conftest.py`
-- **Organized** - Follows established patterns from `tests/managers/` and `tests/mcp_tests/`
+**Fixtures:**
+- Manager tests: `server`, `default_user`, `sarah_agent`, `charles_agent` (from `tests/managers/conftest.py`)
+- API tests: `world_info_client`, `test_agent`, `default_user` (from `tests/world_info_tests/conftest.py`)
 
 For more details on test patterns, see the Testing section in `AGENTS.md`.
 

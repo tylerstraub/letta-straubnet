@@ -113,8 +113,10 @@ Currently extensions are in `letta/straubnet_extensions/` due to container mount
 
 **World Info System** (Complete):
 - Keyword-based prompt injection (SillyTavern-style)
-- Full CRUD REST API at `/v1/world-info/`
+- Full CRUD REST API at `/v1/world-info/` with manager pattern (`WorldInfoManager`)
+- State endpoint: `GET /v1/world-info/agent/{agent_id}/state` for frontend polling
 - Database-driven entries with organization/agent scoping
+- Cooldown/expiration tracking via injection state system
 - See `letta/straubnet_extensions/world_info/README.md` for full documentation
 
 **World Info Development Process:**
@@ -126,7 +128,7 @@ Currently extensions are in `letta/straubnet_extensions/` due to container mount
 - **Commit conventions**: Use `feat(straubnet):` prefix for World Info enhancements
   - Examples: `feat(straubnet): add whole-word matching to World Info`, `feat(straubnet): enhance keyword matching`
 - **Commit strategy**: Incremental commits as features are added/extended (not monolithic)
-- **Current status**: World Info foundation merged to `main_straubnet`
+- **Current status**: World Info system merged to `main_straubnet` with manager pattern and state endpoint
 
 For details on:
 - **Extension patterns and adding processors**: See `letta/straubnet_extensions/README.md`
@@ -227,13 +229,17 @@ def _get_auth_headers():
 The `tests/` directory must be mounted in the container for test files to be visible. The instance manager configures this automatically.
 
 **Example: World Info Tests**
-See `tests/world_info_tests/` for a complete example following these patterns. The World Info test suite demonstrates:
+The World Info test suite demonstrates both manager and API testing patterns:
 
-- **Organized subdirectory structure** - Tests organized in `tests/world_info_tests/` following the same pattern as `tests/managers/`
-- **Shared fixtures via conftest.py** - Common fixtures (`WorldInfoClient`, `test_agent`) available to all test files
-- **Helper classes** (`WorldInfoClient`) for encapsulating API operations
-- **Minimal core tests** - Focused on essential CRUD and regression testing in `test_world_info_api.py`
-- **Scalable structure** - Easy to add detailed test files as needed (e.g., `test_world_info_matcher.py`)
+- **Manager tests** (`tests/managers/test_world_info_manager.py`) - Direct manager method testing
+  - Tests `WorldInfoManager` methods with `server` and `default_user` fixtures
+  - Covers CRUD operations and state queries
+- **API tests** (`tests/world_info_tests/test_world_info_api.py`) - HTTP endpoint testing
+  - Uses `WorldInfoClient` helper class for API operations
+  - Tests REST endpoints including new state endpoint
+  - Shared fixtures via `conftest.py` (`WorldInfoClient`, `test_agent`)
+- **Test organization** - Follows established patterns from `tests/managers/` and `tests/world_info_tests/`
+- **Scalable structure** - Easy to add detailed test files for specific components as needed
 
 This pattern can be adapted for other extension test suites as they grow in complexity.
 
@@ -285,4 +291,4 @@ This pattern can be adapted for other extension test suites as they grow in comp
 
 ---
 
-**Last Updated**: December 2024 - World Info system merged to `main_straubnet`, workflow rules updated, testing patterns documented
+**Last Updated**: December 2024 - World Info API refactored with manager pattern, state endpoint added, comprehensive test coverage implemented

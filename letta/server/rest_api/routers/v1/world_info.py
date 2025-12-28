@@ -15,9 +15,7 @@ from letta.schemas.world_info_entry import (
     WorldInfoEntryCreate,
     WorldInfoEntryUpdate,
 )
-from sqlalchemy import or_, select
-
-from letta.server.db import db_registry
+from letta.schemas.world_info_entry_state import WorldInfoEntriesStateResponse, WorldInfoEntryWithState
 from letta.server.rest_api.dependencies import HeaderParams, get_headers, get_letta_server
 from letta.server.server import SyncServer
 
@@ -42,23 +40,7 @@ async def create_world_info_entry(
     If agent_id is None, the entry will apply globally to all agents in the organization.
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
-
-    if not actor.organization_id:
-        raise HTTPException(status_code=400, detail="Actor must have an organization_id")
-
-    async with db_registry.async_session() as session:
-        # Create the entry with organization_id from actor
-        entry_data = request.model_dump(to_orm=True, exclude_none=True)
-        entry_data["organization_id"] = actor.organization_id
-
-        # Create the ORM model
-        from letta.orm.world_info_entry import WorldInfoEntry as WorldInfoEntryModel
-
-        entry = WorldInfoEntryModel(**entry_data)
-        await entry.create_async(session, actor=actor)
-        pydantic_entry = entry.to_pydantic()
-        await session.commit()
-        return pydantic_entry
+    return await server.world_info_manager.create_entry_async(entry_create=request, actor=actor)
 
 
 @router.get(
@@ -82,51 +64,10 @@ async def list_world_info_entries(
     List World Info entries for the actor's organization.
 
     Returns entries that belong to the actor's organization, optionally filtered by agent_id and enabled status.
-    Entries are ordered by insertion_order DESC (higher priority first).
+    Entries are ordered by insertion_order ASC (lower values first, higher values last).
     """
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
-
-    if not actor.organization_id:
-        raise HTTPException(status_code=400, detail="Actor must have an organization_id")
-
-    async with db_registry.async_session() as session:
-        from letta.orm.world_info_entry import WorldInfoEntry as WorldInfoEntryModel
-
-        # Build the query
-        query = select(WorldInfoEntryModel).where(
-            WorldInfoEntryModel.organization_id == actor.organization_id,
-        )
-
-        # Filter by enabled status if specified
-        if enabled is not None:
-            query = query.where(WorldInfoEntryModel.enabled == enabled)
-
-        # Filter by is_deleted if the field exists (soft-delete support)
-        if hasattr(WorldInfoEntryModel, "is_deleted"):
-            query = query.where(WorldInfoEntryModel.is_deleted == False)  # noqa: E712
-
-        # Apply agent filter
-        if agent_id is not None:
-            # Get both agent-specific entries AND global entries (NULL agent_id)
-            query = query.where(
-                or_(
-                    WorldInfoEntryModel.agent_id == agent_id,
-                    WorldInfoEntryModel.agent_id.is_(None),
-                )
-            )
-        else:
-            # Only get global entries (no agent_id)
-            query = query.where(WorldInfoEntryModel.agent_id.is_(None))
-
-        # Order by insertion_order ASC (lower numbers = injected earlier/further from user, higher numbers = injected later/closer to user)
-        query = query.order_by(WorldInfoEntryModel.insertion_order.asc())
-
-        # Execute query
-        result = await session.execute(query)
-        entries = result.scalars().all()
-
-        # Convert to Pydantic models
-        return [entry.to_pydantic() for entry in entries]
+    return await server.world_info_manager.list_entries_async(actor=actor, agent_id=agent_id, enabled=enabled)
 
 
 @router.get(
@@ -147,23 +88,7 @@ async def retrieve_world_info_entry(
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
 
     try:
-        async with db_registry.async_session() as session:
-            from letta.orm.world_info_entry import WorldInfoEntry as WorldInfoEntryModel
-
-            entry = await WorldInfoEntryModel.read_async(
-                db_session=session,
-                identifier=entry_id,
-                actor=actor,
-            )
-
-            # Verify the entry belongs to the actor's organization
-            if entry.organization_id != actor.organization_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Entry does not belong to your organization",
-                )
-
-            return entry.to_pydantic()
+        return await server.world_info_manager.get_entry_async(entry_id=entry_id, actor=actor)
     except NoResultFound:
         raise HTTPException(status_code=404, detail=f"World Info entry '{entry_id}' not found")
 
@@ -188,33 +113,9 @@ async def update_world_info_entry(
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
 
     try:
-        async with db_registry.async_session() as session:
-            from letta.orm.world_info_entry import WorldInfoEntry as WorldInfoEntryModel
-
-            # Retrieve the existing entry
-            entry = await WorldInfoEntryModel.read_async(
-                db_session=session,
-                identifier=entry_id,
-                actor=actor,
-            )
-
-            # Verify the entry belongs to the actor's organization
-            if entry.organization_id != actor.organization_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Entry does not belong to your organization",
-                )
-
-            # Update only the fields that are provided
-            update_data = request.model_dump(to_orm=True, exclude_unset=True, exclude_none=True)
-            for key, value in update_data.items():
-                setattr(entry, key, value)
-
-            # Save the changes
-            await entry.update_async(db_session=session, actor=actor, no_commit=True, no_refresh=True)
-            pydantic_entry = entry.to_pydantic()
-            await session.commit()
-            return pydantic_entry
+        return await server.world_info_manager.update_entry_async(
+            entry_id=entry_id, entry_update=request, actor=actor
+        )
     except NoResultFound:
         raise HTTPException(status_code=404, detail=f"World Info entry '{entry_id}' not found")
 
@@ -238,25 +139,40 @@ async def delete_world_info_entry(
     actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
 
     try:
-        async with db_registry.async_session() as session:
-            from letta.orm.world_info_entry import WorldInfoEntry as WorldInfoEntryModel
-
-            # Retrieve the entry to verify it exists and belongs to the organization
-            entry = await WorldInfoEntryModel.read_async(
-                db_session=session,
-                identifier=entry_id,
-                actor=actor,
-            )
-
-            # Verify the entry belongs to the actor's organization
-            if entry.organization_id != actor.organization_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Entry does not belong to your organization",
-                )
-
-            # Hard delete the entry
-            await entry.hard_delete_async(db_session=session, actor=actor)
+        await server.world_info_manager.delete_entry_async(entry_id=entry_id, actor=actor)
     except NoResultFound:
         raise HTTPException(status_code=404, detail=f"World Info entry '{entry_id}' not found")
 
+
+@router.get(
+    "/agent/{agent_id}/state",
+    response_model=WorldInfoEntriesStateResponse,
+    operation_id="get_world_info_entries_state",
+)
+async def get_world_info_entries_state(
+    agent_id: str,
+    server: SyncServer = Depends(get_letta_server),
+    headers: HeaderParams = Depends(get_headers),
+):
+    """
+    Get World Info entries for an agent with their current runtime state.
+
+    This endpoint is optimized for frequent polling by frontends to track which entries
+    are currently active and their cooldown/expiration counters.
+
+    Returns all entries applicable to the agent (agent-specific + global) along with
+    their current injection state (cooldown/expiration counters).
+    """
+    actor = await server.user_manager.get_actor_or_default_async(actor_id=headers.actor_id)
+
+    entries_with_state = await server.world_info_manager.get_entries_with_state_async(
+        agent_id=agent_id, actor=actor
+    )
+
+    # Convert dict format to schema format
+    result_entries = [
+        WorldInfoEntryWithState(entry=item["entry"], state=item["state"])
+        for item in entries_with_state
+    ]
+
+    return WorldInfoEntriesStateResponse(entries=result_entries)

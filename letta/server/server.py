@@ -107,6 +107,7 @@ from letta.services.telemetry_manager import TelemetryManager
 from letta.services.tool_executor.tool_execution_manager import ToolExecutionManager
 from letta.services.tool_manager import ToolManager
 from letta.services.user_manager import UserManager
+from letta.services.world_info_manager import WorldInfoManager
 from letta.settings import DatabaseChoice, model_settings, settings, tool_settings
 from letta.streaming_interface import AgentChunkStreamingInterface
 from letta.utils import get_friendly_error_msg, get_persona_text, make_key, safe_create_task
@@ -172,6 +173,7 @@ class SyncServer(object):
         self.telemetry_manager = TelemetryManager()
         self.file_agent_manager = FileAgentManager()
         self.file_manager = FileManager()
+        self.world_info_manager = WorldInfoManager()
 
         self.agent_serialization_manager = AgentSerializationManager(
             agent_manager=self.agent_manager,

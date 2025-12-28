@@ -265,6 +265,9 @@ If your extension adds database tables:
 Current extension modules:
 
 - **`world_info/`** - World Info system (SillyTavern-style keyword-based prompt injection)
+  - Full CRUD REST API with manager pattern (`WorldInfoManager`)
+  - State endpoint for frontend polling (`GET /v1/world-info/agent/{agent_id}/state`)
+  - Cooldown/expiration tracking via injection state system
   - See `world_info/README.md` for detailed documentation
 
 For information about specific extension implementations, see their individual README files.

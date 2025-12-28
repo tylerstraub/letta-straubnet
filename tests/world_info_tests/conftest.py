@@ -77,6 +77,16 @@ class WorldInfoClient:
         )
         response.raise_for_status()
 
+    def get_entries_state(self, agent_id: str) -> List[Dict]:
+        """Get World Info entries with their current runtime state for an agent."""
+        response = requests.get(
+            f"{self.base_url}/agent/{agent_id}/state",
+            headers=self.headers,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("entries", [])
+
     def get_injection_states(self, agent_id: str) -> List[Dict]:
         """
         Get injection states for an agent (direct DB access for testing).

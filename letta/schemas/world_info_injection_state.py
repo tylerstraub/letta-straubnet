@@ -20,7 +20,7 @@ class WorldInfoInjectionStateBase(OrmMetadataBase):
     world_info_entry_id: str = Field(..., description="The ID of the World Info entry.")
     agent_id: str = Field(..., description="The ID of the agent.")
     current_cooldown: Optional[int] = Field(None, description="Remaining cooldown runs. NULL or 0 means no cooldown.")
-    current_expiration: Optional[int] = Field(None, description="Remaining runs before removal. NULL or 0 means never expire.")
+    current_expiration: Optional[int] = Field(None, description="Remaining runs before removal. NULL means never expire (persist indefinitely). 0 means expired (should be removed).")
     cooldown_setting: int = Field(..., description="Cooldown setting from WorldInfoEntry (cached).")
     expiration_setting: int = Field(..., description="Expiration setting from WorldInfoEntry (cached).")
 

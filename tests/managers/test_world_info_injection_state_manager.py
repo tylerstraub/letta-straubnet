@@ -211,66 +211,127 @@ async def test_delete_injection_state(server, default_organization, sarah_agent)
 
 
 @pytest.mark.asyncio
-async def test_delete_completed_states(server, default_organization, sarah_agent):
-    """Test deletion of completed states (both counters at 0 or None)."""
+async def test_delete_completed_states(server, default_organization, sarah_agent, default_user):
+    """Test deletion of completed states.
+    
+    A state is complete when:
+    - Cooldown is None or 0 (no cooldown)
+    - AND expiration is 0 (expired, not None - None means never expire)
+    """
+    from letta.schemas.world_info_entry import WorldInfoEntryCreate
+    
     manager = WorldInfoInjectionStateManager()
+    world_info_manager = server.world_info_manager
 
-    # Create multiple states with different completion states
-    completed1 = await manager.create_injection_state(
-        world_info_entry_id=default_world_info_entry.id,
-        agent_id=sarah_agent.id,
-        current_cooldown=0,
-        current_expiration=0,
-        cooldown_setting=5,
-        expiration_setting=10,
-        organization_id=default_organization.id,
+    # Create actual World Info entries for the states
+    entry1 = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test1"],
+            content="Test entry 1",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
+    )
+    
+    entry2 = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test2"],
+            content="Test entry 2",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
+    )
+    
+    entry3 = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test3"],
+            content="Test entry 3",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
+    )
+    
+    entry4 = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test4"],
+            content="Test entry 4",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
     )
 
-    completed2 = await manager.create_injection_state(
-        world_info_entry_id=default_world_info_entry.id,
-        agent_id=sarah_agent.id,
-        current_cooldown=None,
-        current_expiration=None,
-        cooldown_setting=0,
-        expiration_setting=0,
-        organization_id=default_organization.id,
-    )
+    try:
+        # Create multiple states with different completion states
+        # completed1: cooldown=0, expiration=0 -> should be deleted (complete)
+        completed1 = await manager.create_injection_state(
+            world_info_entry_id=entry1.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=0,
+            current_expiration=0,
+            cooldown_setting=5,
+            expiration_setting=10,
+            organization_id=default_organization.id,
+        )
 
-    completed3 = await manager.create_injection_state(
-        world_info_entry_id=default_world_info_entry.id,
-        agent_id=sarah_agent.id,
-        current_cooldown=None,
-        current_expiration=0,
-        cooldown_setting=0,
-        expiration_setting=5,
-        organization_id=default_organization.id,
-    )
+        # never_expires: cooldown=None, expiration=None -> should NOT be deleted (expiration=None means never expire)
+        never_expires = await manager.create_injection_state(
+            world_info_entry_id=entry2.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=None,
+            current_expiration=None,  # None means never expire, so NOT complete
+            cooldown_setting=0,
+            expiration_setting=0,
+            organization_id=default_organization.id,
+        )
 
-    active = await manager.create_injection_state(
-        world_info_entry_id=default_world_info_entry.id,
-        agent_id=sarah_agent.id,
-        current_cooldown=5,
-        current_expiration=10,
-        cooldown_setting=5,
-        expiration_setting=10,
-        organization_id=default_organization.id,
-    )
+        # completed3: cooldown=None, expiration=0 -> should be deleted (complete)
+        completed3 = await manager.create_injection_state(
+            world_info_entry_id=entry3.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=None,
+            current_expiration=0,  # 0 means expired, so complete
+            cooldown_setting=0,
+            expiration_setting=5,
+            organization_id=default_organization.id,
+        )
 
-    # Delete completed states
-    await manager.delete_completed_states(sarah_agent.id)
+        # active: cooldown=5, expiration=10 -> should NOT be deleted (not complete)
+        active = await manager.create_injection_state(
+            world_info_entry_id=entry4.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=5,
+            current_expiration=10,
+            cooldown_setting=5,
+            expiration_setting=10,
+            organization_id=default_organization.id,
+        )
 
-    # Verify completed states are gone
-    assert await manager.get_injection_state_by_entry("wie-completed-1", sarah_agent.id) is None
-    assert await manager.get_injection_state_by_entry("wie-completed-2", sarah_agent.id) is None
-    assert await manager.get_injection_state_by_entry("wie-completed-3", sarah_agent.id) is None
+        # Delete completed states
+        await manager.delete_completed_states(sarah_agent.id)
 
-    # Verify active state remains
-    remaining = await manager.get_injection_state_by_entry("wie-active", sarah_agent.id)
-    assert remaining is not None
-    assert remaining.current_cooldown == 5
+        # Verify completed states are gone
+        assert await manager.get_injection_state_by_entry(entry1.id, sarah_agent.id) is None, "completed1 should be deleted"
+        assert await manager.get_injection_state_by_entry(entry3.id, sarah_agent.id) is None, "completed3 should be deleted"
+        
+        # Verify never_expires state remains (expiration=None means never expire, not complete)
+        remaining_never_expires = await manager.get_injection_state_by_entry(entry2.id, sarah_agent.id)
+        assert remaining_never_expires is not None, "never_expires state should remain (expiration=None means never expire)"
+        assert remaining_never_expires.current_expiration is None
+        
+        # Verify active state remains
+        remaining_active = await manager.get_injection_state_by_entry(entry4.id, sarah_agent.id)
+        assert remaining_active is not None, "active state should remain"
+        assert remaining_active.current_cooldown == 5
 
-    # Cleanup
-    await manager.delete_injection_state(active.id)
+        # Cleanup
+        await manager.delete_injection_state(never_expires.id)
+        await manager.delete_injection_state(active.id)
+    finally:
+        # Cleanup entries
+        await world_info_manager.delete_entry_async(entry1.id, default_user)
+        await world_info_manager.delete_entry_async(entry2.id, default_user)
+        await world_info_manager.delete_entry_async(entry3.id, default_user)
+        await world_info_manager.delete_entry_async(entry4.id, default_user)
 
 
 # ============================================================================

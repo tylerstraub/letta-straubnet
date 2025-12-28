@@ -169,7 +169,9 @@ class WorldInfoInjectionStateManager:
         """
         Delete all completed injection states for an agent.
 
-        A state is considered complete if both cooldown and expiration are 0 or None.
+        A state is considered complete when:
+        - Cooldown is None or 0 (no cooldown)
+        - AND expiration is 0 (expired, not None - None means never expire)
 
         Args:
             agent_id: ID of the agent
@@ -178,23 +180,13 @@ class WorldInfoInjectionStateManager:
             stmt = select(WorldInfoInjectionStateModel).where(
                 WorldInfoInjectionStateModel.agent_id == agent_id
             )
+            # Only delete states where expiration=0 (expired), not None (never expire)
             stmt = stmt.where(
-                or_(
-                    and_(
+                and_(
+                    WorldInfoInjectionStateModel.current_expiration == 0,
+                    or_(
                         WorldInfoInjectionStateModel.current_cooldown == 0,
-                        WorldInfoInjectionStateModel.current_expiration == 0,
-                    ),
-                    and_(
                         WorldInfoInjectionStateModel.current_cooldown.is_(None),
-                        WorldInfoInjectionStateModel.current_expiration == 0,
-                    ),
-                    and_(
-                        WorldInfoInjectionStateModel.current_cooldown == 0,
-                        WorldInfoInjectionStateModel.current_expiration.is_(None),
-                    ),
-                    and_(
-                        WorldInfoInjectionStateModel.current_cooldown.is_(None),
-                        WorldInfoInjectionStateModel.current_expiration.is_(None),
                     ),
                 )
             )

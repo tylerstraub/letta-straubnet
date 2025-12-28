@@ -5,6 +5,12 @@ These tests verify the processor logic directly without requiring
 full end-to-end LLM API calls.
 """
 
+import sys
+import os
+
+# Add /app/letta to Python path so we can import straubnet_extensions
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../..", "letta"))
+
 import pytest
 
 from letta.schemas.enums import MessageRole
@@ -523,4 +529,107 @@ async def test_processor_state_cleanup(world_info_client, test_agent, server):
     finally:
         world_info_client.delete_entry(entry_complete["id"])
         world_info_client.delete_entry(entry_active["id"])
+
+
+# ============================================================================
+# Scenario 8: Expiration=0 means never expire (persist indefinitely)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_processor_expiration_zero_never_expires(world_info_client, test_agent, server):
+    """
+    Test that expiration=0 means "never expire" (persist indefinitely):
+    - Entry with cooldown > 0, expiration=0
+    - Message should persist and NOT be removed by _remove_expired_entries()
+    - This verifies the fix for the bug where None was treated as expired
+    """
+    processor = WorldInfoProcessor()
+    agent_id = test_agent["id"]
+    organization_id = world_info_client.headers["organization_id"]
+
+    # Create entry with cooldown and expiration=0 (never expire)
+    entry = world_info_client.create_entry({
+        "keywords": ["never_expire"],
+        "content": "This entry never expires",
+        "agent_id": agent_id,
+        "cooldown": 2,
+        "expiration": 0,  # Never expire - should persist indefinitely
+    })
+
+    try:
+        messages = [MessageCreate(role=MessageRole.user, content="never_expire test")]
+
+        # Run 1: Should inject
+        context = {
+            "run_id": "run-001",
+            "agent_id": agent_id,
+            "organization_id": organization_id,
+        }
+
+        result = await processor.process(messages, context)
+        world_info_messages = [m for m in result if m.role == MessageRole.system and "never expires" in m.content]
+        assert len(world_info_messages) == 1, "Should inject on first match"
+
+        # Verify state was created with expiration=None (never expire)
+        async with server.async_session() as session:
+            from letta.orm import WorldInfoInjectionState
+            from sqlalchemy import select
+
+            state_result = await session.execute(
+                select(WorldInfoInjectionState).where(
+                    WorldInfoInjectionState.world_info_entry_id == entry["id"],
+                    WorldInfoInjectionState.agent_id == agent_id,
+                )
+            )
+            state = state_result.scalar_one_or_none()
+            assert state is not None
+            assert state.current_cooldown == 2
+            assert state.current_expiration is None, "expiration=0 should result in current_expiration=None (never expire)"
+
+        # Run 2: Cooldown active, but simulate multiple runs to verify message isn't removed
+        context["run_id"] = "run-002"
+        await processor.process(messages, context)
+
+        # Run 3: Cooldown expired, should inject again
+        context["run_id"] = "run-003"
+        result = await processor.process(messages, context)
+        world_info_messages = [m for m in result if m.role == MessageRole.system and "never expires" in m.content]
+        assert len(world_info_messages) == 1, "Should inject again after cooldown"
+
+        # Verify state still exists with expiration=None (message should NOT be removed)
+        async with server.async_session() as session:
+            state_result = await session.execute(
+                select(WorldInfoInjectionState).where(
+                    WorldInfoInjectionState.world_info_entry_id == entry["id"],
+                    WorldInfoInjectionState.agent_id == agent_id,
+                )
+            )
+            state = state_result.scalar_one_or_none()
+            assert state is not None, "State should still exist (expiration=None means never expire)"
+            assert state.current_expiration is None, "Expiration should remain None (never expire)"
+            
+            # Verify the message would still be in context (not removed)
+            # We can't directly check agent.message_ids here, but we verify the state exists
+            # which means _remove_expired_entries() did NOT remove it
+
+        # Run 4: Simulate many more runs - message should still persist
+        for run_num in range(4, 10):
+            context["run_id"] = f"run-{run_num:03d}"
+            await processor.process(messages, context)
+
+        # After many runs, verify state still exists (never expired)
+        async with server.async_session() as session:
+            state_result = await session.execute(
+                select(WorldInfoInjectionState).where(
+                    WorldInfoInjectionState.world_info_entry_id == entry["id"],
+                    WorldInfoInjectionState.agent_id == agent_id,
+                )
+            )
+            state = state_result.scalar_one_or_none()
+            assert state is not None, "State should still exist after many runs (expiration=None means never expire)"
+            assert state.current_expiration is None, "Expiration should still be None after many runs"
+
+    finally:
+        world_info_client.delete_entry(entry["id"])
 

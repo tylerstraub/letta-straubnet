@@ -172,6 +172,9 @@ class WorldInfoProcessor(MessageProcessor):
         """
         Remove system messages where expiration hit 0.
         
+        Note: expiration=None means "never expire" (persist indefinitely), so only
+        expiration=0 means expired and should be removed.
+        
         Args:
             agent_id: The agent ID
             actor: The user for permission checking
@@ -180,12 +183,12 @@ class WorldInfoProcessor(MessageProcessor):
         states = self._get_injection_states_sync(agent_id)
         logger.debug(f"[World Info] Checking {len(states)} states for expired entries")
         
-        # Filter for expired states (expiration = 0 or None, meaning expired)
+        # Filter for expired states (expiration = 0 means expired, None means never expire)
         expired_states = [
             state for state in states
-            if state.current_expiration is None or state.current_expiration == 0
+            if state.current_expiration == 0
         ]
-        logger.debug(f"[World Info] Found {len(expired_states)} expired states (expiration is None or 0)")
+        logger.debug(f"[World Info] Found {len(expired_states)} expired states (expiration is 0, None means never expire)")
         
         if not expired_states:
             return
@@ -229,21 +232,33 @@ class WorldInfoProcessor(MessageProcessor):
     
     def _is_state_complete(self, state) -> bool:
         """
-        Check if a state is complete (both cooldown and expiration at 0 or None).
+        Check if a state is complete (can be deleted).
+        
+        A state is complete when:
+        - Cooldown is None or 0 (no cooldown = complete)
+        - AND expiration is 0 (expired, not None - None means never expire = not complete)
         
         Args:
             state: Injection state to check
             
         Returns:
-            True if state is complete, False otherwise
+            True if state is complete and can be deleted, False otherwise
         """
+        # Cooldown complete: None or 0 means no cooldown (complete)
         cooldown_complete = state.current_cooldown is None or state.current_cooldown == 0
-        expiration_complete = state.current_expiration is None or state.current_expiration == 0
+        
+        # Expiration complete: Only 0 means expired (complete). None means never expire (not complete)
+        expiration_complete = state.current_expiration == 0
+        
         return cooldown_complete and expiration_complete
     
     def _cleanup_completed_states(self, agent_id: str, actor) -> None:
         """
-        Delete state records that are done (both cooldown and expiration at 0 or None).
+        Delete state records that are complete (can be safely removed).
+        
+        A state is complete when:
+        - Cooldown is None or 0 (no cooldown = complete)
+        - AND expiration is 0 (expired, not None - None means never expire = not complete)
         
         Args:
             agent_id: The agent ID
@@ -256,7 +271,8 @@ class WorldInfoProcessor(MessageProcessor):
             if self._is_state_complete(state):
                 # Both counters are done - delete the state
                 # Note: With the new name-based matching, we don't rely on injected_message_id anymore
-                logger.info(f"[World Info] Deleting completed state {state.id} (both cooldown and expiration are None/0)")
+                # Note: expiration=None means never expire (not complete), only expiration=0 means expired
+                logger.info(f"[World Info] Deleting completed state {state.id} (cooldown=None/0 and expiration=0)")
                 self._delete_injection_state_sync(self.injection_state_manager, state.id)
     
     def _should_inject(self, entry, agent_id: str, actor) -> bool:

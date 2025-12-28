@@ -53,17 +53,17 @@ class WorldInfoInjectionState(SqlalchemyBase, OrganizationMixin):
         doc="ID of the agent this state is for.",
     )
 
-    # Counters (null = 0 in application logic)
+    # Counters
     current_cooldown: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        doc="Remaining cooldown runs. NULL or 0 means no cooldown.",
+        doc="Remaining cooldown runs. NULL or 0 means no cooldown (can inject).",
     )
 
     current_expiration: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        doc="Remaining runs before removal from context. NULL or 0 means never expire.",
+        doc="Remaining runs before removal from context. NULL means never expire (persist indefinitely). 0 means expired (should be removed).",
     )
 
     # Cached configuration (avoid JOINs during hot path)

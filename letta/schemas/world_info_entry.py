@@ -18,6 +18,10 @@ class WorldInfoEntryBase(OrmMetadataBase):
     __id_prefix__ = "world-info-entry"
 
     organization_id: str = Field(..., description="The organization this entry belongs to.")
+    label: Optional[str] = Field(
+        None,
+        description="Optional short human-readable label for organizational purposes.",
+    )
     keywords: List[str] = Field(..., description="List of keywords or regex patterns that trigger this entry.")
     content: str = Field(..., description="The content to inject when keywords are matched.")
     insertion_order: int = Field(
@@ -74,6 +78,7 @@ class WorldInfoEntryUpdate(OrmMetadataBase):
 
     keywords: Optional[List[str]] = Field(None, description="List of keywords or regex patterns.")
     content: Optional[str] = Field(None, description="The content to inject.")
+    label: Optional[str] = Field(None, description="Optional short human-readable label for organizational purposes.")
     insertion_order: Optional[int] = Field(None, description="Priority/order for insertion.")
     agent_id: Optional[str] = Field(None, description="Optional agent ID.")
     enabled: Optional[bool] = Field(None, description="Whether this entry is enabled.")

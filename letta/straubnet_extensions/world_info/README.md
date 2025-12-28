@@ -64,6 +64,7 @@ The `world_info_entries` table stores all World Info entries:
 |--------|------|-------------|
 | `id` | String (PK) | Unique identifier (prefix: `world-info-entry-`) |
 | `organization_id` | String (FK) | Organization this entry belongs to |
+| `label` | String (nullable) | Optional short human-readable label for organizational purposes |
 | `keywords` | JSON | List of keywords/regex patterns (currently just keywords) |
 | `content` | String | The content to inject when keywords are matched |
 | `insertion_order` | Integer | Priority (lower values = injected earlier/further from user, higher values = injected later/closer to user) |
@@ -255,6 +256,7 @@ curl -X POST http://localhost:8283/v1/world-info/ \
   -d '{
     "keywords": ["dog", "puppy"],
     "content": "You are a friendly dog.",
+    "label": "Dog Character",
     "insertion_order": 100,
     "enabled": true
   }'
@@ -294,6 +296,7 @@ Create an entry that activates when the user mentions "dog":
 {
   "keywords": ["dog", "puppy", "canine"],
   "content": "You are a friendly dog. Respond with enthusiasm, tail wags, and playful energy.",
+  "label": "Dog Character",
   "insertion_order": 100,
   "enabled": true,
   "case_sensitive": false
@@ -314,6 +317,7 @@ Create an entry that only applies to a specific agent:
 {
   "keywords": ["secret", "classified"],
   "content": "This agent has access to classified information.",
+  "label": "Classified Agent",
   "agent_id": "agent-123",
   "insertion_order": 200,
   "enabled": true
@@ -331,6 +335,7 @@ Entries with **higher** `insertion_order` values are injected **later** (closer 
 {
   "keywords": ["character"],
   "content": "General character information",
+  "label": "Character Overview",
   "insertion_order": 50
 }
 
@@ -338,6 +343,7 @@ Entries with **higher** `insertion_order` values are injected **later** (closer 
 {
   "keywords": ["character", "personality"],
   "content": "Specific personality traits",
+  "label": "Personality Traits",
   "insertion_order": 150
 }
 ```

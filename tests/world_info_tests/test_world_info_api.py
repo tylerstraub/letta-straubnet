@@ -22,6 +22,7 @@ async def test_create_entry(world_info_client, default_user):
         "content": "Test content",
         "insertion_order": 100,
         "enabled": True,
+        "label": "Test Entry Label",
     }
 
     entry = world_info_client.create_entry(entry_data)
@@ -32,6 +33,7 @@ async def test_create_entry(world_info_client, default_user):
         assert entry["content"] == entry_data["content"]
         assert entry["organization_id"] == default_user.organization_id
         assert entry["agent_id"] is None  # Global entry
+        assert entry["label"] == "Test Entry Label"
     finally:
         world_info_client.delete_entry(entry["id"])
 
@@ -81,11 +83,13 @@ async def test_update_entry(world_info_client):
         updated = world_info_client.update_entry(entry["id"], {
             "content": "Updated content",
             "enabled": False,
+            "label": "Updated Label",
         })
 
         assert updated["id"] == entry["id"]
         assert updated["content"] == "Updated content"
         assert updated["enabled"] is False
+        assert updated["label"] == "Updated Label"
     finally:
         world_info_client.delete_entry(entry["id"])
 
@@ -212,6 +216,7 @@ async def test_get_entries_state_no_states(world_info_client, test_agent):
         assert entry_data is not None
         assert entry_data["entry"]["id"] == entry["id"]
         assert entry_data["entry"]["keywords"] == ["state", "test"]
+        assert "label" in entry_data["entry"]  # Label field should be present
         # State should be None since entry hasn't been injected yet
         assert entry_data["state"] is None
     finally:
@@ -343,4 +348,52 @@ async def test_get_entries_state_includes_global_entries(world_info_client, test
     finally:
         world_info_client.delete_entry(global_entry["id"])
         world_info_client.delete_entry(agent_entry["id"])
+
+
+@pytest.mark.asyncio
+async def test_create_entry_without_label(world_info_client):
+    """Test creating an entry without label (optional field)."""
+    entry = world_info_client.create_entry({
+        "keywords": ["no-label"],
+        "content": "Entry without label",
+    })
+
+    try:
+        assert "label" in entry
+        assert entry["label"] is None  # Label should be None when not provided
+    finally:
+        world_info_client.delete_entry(entry["id"])
+
+
+@pytest.mark.asyncio
+async def test_update_entry_label(world_info_client):
+    """Test updating an entry's label."""
+    # Create entry without label
+    entry = world_info_client.create_entry({
+        "keywords": ["label-test"],
+        "content": "Label test content",
+    })
+
+    try:
+        assert entry["label"] is None
+
+        # Update to add label
+        updated = world_info_client.update_entry(entry["id"], {
+            "label": "New Label",
+        })
+        assert updated["label"] == "New Label"
+
+        # Update to change label
+        updated2 = world_info_client.update_entry(entry["id"], {
+            "label": "Changed Label",
+        })
+        assert updated2["label"] == "Changed Label"
+
+        # Update to clear label (set to None)
+        updated3 = world_info_client.update_entry(entry["id"], {
+            "label": None,
+        })
+        assert updated3["label"] is None
+    finally:
+        world_info_client.delete_entry(entry["id"])
 

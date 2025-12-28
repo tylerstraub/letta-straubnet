@@ -29,6 +29,12 @@ class WorldInfoEntry(SqlalchemyBase, OrganizationMixin):
         doc="Unique identifier for the World Info entry.",
     )
 
+    label: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        doc="Optional short human-readable label for organizational purposes.",
+    )
+
     keywords: Mapped[List[str]] = mapped_column(
         JSON,
         doc="List of keywords or regex patterns that trigger this entry.",

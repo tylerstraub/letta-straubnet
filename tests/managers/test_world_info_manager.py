@@ -123,6 +123,7 @@ async def test_create_entry(server: SyncServer, default_user, sarah_agent):
         match_whole_words=True,
         cooldown=5,
         expiration=10,
+        label="Test Entry",
     )
 
     entry = await server.world_info_manager.create_entry_async(entry_create=entry_create, actor=default_user)
@@ -139,6 +140,7 @@ async def test_create_entry(server: SyncServer, default_user, sarah_agent):
     assert entry.match_whole_words is True
     assert entry.cooldown == 5
     assert entry.expiration == 10
+    assert entry.label == "Test Entry"
 
     # Cleanup
     await server.world_info_manager.delete_entry_async(entry_id=entry.id, actor=default_user)
@@ -157,9 +159,70 @@ async def test_create_global_entry(server: SyncServer, default_user):
 
     assert entry.agent_id is None
     assert entry.organization_id == default_user.organization_id
+    assert entry.label is None  # Label is optional, should be None if not provided
 
     # Cleanup
     await server.world_info_manager.delete_entry_async(entry_id=entry.id, actor=default_user)
+
+
+@pytest.mark.asyncio
+async def test_create_entry_without_label(server: SyncServer, default_user, sarah_agent):
+    """Test creating an entry without label (optional field)."""
+    entry_create = WorldInfoEntryCreate(
+        keywords=["no-label"],
+        content="Entry without label",
+        agent_id=sarah_agent.id,
+    )
+
+    entry = await server.world_info_manager.create_entry_async(entry_create=entry_create, actor=default_user)
+
+    assert entry.label is None  # Label should be None when not provided
+
+    # Cleanup
+    await server.world_info_manager.delete_entry_async(entry_id=entry.id, actor=default_user)
+
+
+@pytest.mark.asyncio
+async def test_update_entry_label(server: SyncServer, default_user, sarah_agent):
+    """Test updating an entry's label."""
+    # Create entry without label
+    created_entry = await server.world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["label-test"],
+            content="Label test content",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
+    )
+
+    assert created_entry.label is None
+
+    # Update to add label
+    entry_update = WorldInfoEntryUpdate(label="New Label")
+    updated_entry = await server.world_info_manager.update_entry_async(
+        entry_id=created_entry.id, entry_update=entry_update, actor=default_user
+    )
+
+    assert updated_entry.label == "New Label"
+
+    # Update to change label
+    entry_update2 = WorldInfoEntryUpdate(label="Changed Label")
+    updated_entry2 = await server.world_info_manager.update_entry_async(
+        entry_id=created_entry.id, entry_update=entry_update2, actor=default_user
+    )
+
+    assert updated_entry2.label == "Changed Label"
+
+    # Update to clear label (set to None)
+    entry_update3 = WorldInfoEntryUpdate(label=None)
+    updated_entry3 = await server.world_info_manager.update_entry_async(
+        entry_id=created_entry.id, entry_update=entry_update3, actor=default_user
+    )
+
+    assert updated_entry3.label is None
+
+    # Cleanup
+    await server.world_info_manager.delete_entry_async(entry_id=created_entry.id, actor=default_user)
 
 
 @pytest.mark.asyncio
@@ -210,6 +273,7 @@ async def test_update_entry(server: SyncServer, default_user, sarah_agent):
         content="Updated content",
         enabled=False,
         insertion_order=200,
+        label="Updated Label",
     )
     updated_entry = await server.world_info_manager.update_entry_async(
         entry_id=created_entry.id, entry_update=entry_update, actor=default_user
@@ -219,6 +283,7 @@ async def test_update_entry(server: SyncServer, default_user, sarah_agent):
     assert updated_entry.content == "Updated content"
     assert updated_entry.enabled is False
     assert updated_entry.insertion_order == 200
+    assert updated_entry.label == "Updated Label"
     # Keywords should remain unchanged
     assert updated_entry.keywords == ["update", "test"]
 

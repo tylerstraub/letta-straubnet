@@ -186,7 +186,8 @@ class WorldInfoManager:
                 raise NoResultFound(f"World Info entry '{entry_id}' not found")
 
             # Update only the fields that are provided
-            update_data = entry_update.model_dump(to_orm=True, exclude_unset=True, exclude_none=True)
+            # exclude_none=False allows clearing optional fields by setting them to None
+            update_data = entry_update.model_dump(to_orm=True, exclude_unset=True, exclude_none=False)
             for key, value in update_data.items():
                 setattr(entry, key, value)
 

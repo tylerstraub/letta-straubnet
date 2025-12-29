@@ -66,6 +66,13 @@ class WorldInfoInjectionStateManager:
             existing = result.scalar_one_or_none()
             
             if existing:
+                # Update existing state with new values (reset counters for new activation)
+                existing.current_cooldown = current_cooldown if current_cooldown is not None and current_cooldown > 0 else None
+                existing.current_expiration = current_expiration if current_expiration is not None and current_expiration > 0 else None
+                existing.cooldown_setting = cooldown_setting
+                existing.expiration_setting = expiration_setting
+                await existing.update_async(session, actor=actor)
+                await session.refresh(existing)
                 return existing.to_pydantic()
             
             state = WorldInfoInjectionStateModel(
@@ -147,9 +154,11 @@ class WorldInfoInjectionStateManager:
             state = await WorldInfoInjectionStateModel.read_async(db_session=session, identifier=injection_state_id)
 
             if current_cooldown is not None:
-                state.current_cooldown = current_cooldown if current_cooldown > 0 else None
+                # Preserve 0 as 0 (cooldown complete), only use None when there's no cooldown setting
+                state.current_cooldown = current_cooldown
             if current_expiration is not None:
-                state.current_expiration = current_expiration if current_expiration > 0 else None
+                # Preserve 0 as 0 (expiration complete), only use None when there's no expiration setting
+                state.current_expiration = current_expiration
 
             await state.update_async(session, actor=actor)
             return state.to_pydantic()

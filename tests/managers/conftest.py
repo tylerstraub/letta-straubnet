@@ -62,22 +62,83 @@ async def async_session():
 
 @pytest.fixture(autouse=True)
 async def _clear_tables(async_session):
-    """Clear all tables before each test (except block_history)."""
-    # Temporarily disable foreign key constraints for SQLite only
-    engine_name = async_session.bind.dialect.name
-    if engine_name == "sqlite":
-        await async_session.execute(text("PRAGMA foreign_keys = OFF"))
+    """Clear all tables before and after each test (except block_history).
+    
+    SAFETY CHECK: This fixture will NOT run if connected to a production database.
+    It checks for production database names to prevent accidental data deletion.
+    
+    This fixture runs cleanup both before (to ensure clean state) and after (to clean up
+    data created during the test) each test to prevent test data from persisting.
+    """
+    import os
+    
+    # Get the database name from environment or connection
+    db_name = os.getenv("LETTA_PG_DB", "")
+    
+    # CRITICAL SAFETY CHECK: Do not clear tables if connected to production databases
+    # This prevents accidental deletion of production data during testing
+    production_db_names = [
+        "letta_atlas",  # Instance database
+        "letta_production",
+        "letta_prod",
+        "production",
+        "prod",
+    ]
+    
+    if db_name.lower() in [name.lower() for name in production_db_names]:
+        pytest.skip(
+            f"SKIPPING TABLE CLEAR: Connected to production database '{db_name}'. "
+            f"This fixture would delete all data. Use a test database instead. "
+            f"Set LETTA_PG_DB to a test database name (e.g., 'letta_test') to run tests."
+        )
+    
+    async def _delete_all_tables():
+        """Helper function to delete all tables."""
+        engine_name = async_session.bind.dialect.name
+        
+        # For PostgreSQL, we need to disable triggers temporarily to avoid FK constraint issues
+        if engine_name == "postgresql":
+            # Disable all triggers temporarily
+            await async_session.execute(text("SET session_replication_role = 'replica'"))
+        
+        # Temporarily disable foreign key constraints for SQLite only
+        if engine_name == "sqlite":
+            await async_session.execute(text("PRAGMA foreign_keys = OFF"))
 
-    for table in reversed(Base.metadata.sorted_tables):  # Reverse to avoid FK issues
-        # If this is the block_history table, skip it
-        if table.name == "block_history":
-            continue
-        await async_session.execute(table.delete())  # Truncate table
-    await async_session.commit()
+        # Delete all tables in reverse order to handle foreign key dependencies
+        for table in reversed(Base.metadata.sorted_tables):
+            # If this is the block_history table, skip it
+            if table.name == "block_history":
+                continue
+            try:
+                await async_session.execute(table.delete())  # Delete all rows
+            except Exception as e:
+                # Log but continue - some tables might not exist or have dependencies
+                # This is expected in some edge cases (e.g., table doesn't exist, constraint issues)
+                import logging
+                logging.getLogger(__name__).debug(
+                    f"Could not delete from table {table.name}: {e}. "
+                    "This may be expected in some test scenarios."
+                )
+        
+        await async_session.commit()
 
-    # Re-enable foreign key constraints for SQLite only
-    if engine_name == "sqlite":
-        await async_session.execute(text("PRAGMA foreign_keys = ON"))
+        # Re-enable foreign key constraints for SQLite
+        if engine_name == "sqlite":
+            await async_session.execute(text("PRAGMA foreign_keys = ON"))
+        
+        # Re-enable triggers for PostgreSQL
+        if engine_name == "postgresql":
+            await async_session.execute(text("SET session_replication_role = 'origin'"))
+    
+    # Clean up BEFORE test (ensure clean state)
+    await _delete_all_tables()
+    
+    # Run the test
+    yield
+    
+    # Clean up AFTER test (remove any data created during the test)
+    await _delete_all_tables()
 
 
 @pytest.fixture(scope="module")

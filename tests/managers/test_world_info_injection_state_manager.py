@@ -340,40 +340,67 @@ async def test_delete_completed_states(server, default_organization, sarah_agent
 
 
 @pytest.mark.asyncio
-async def test_unique_constraint_per_entry_agent(server, default_organization, sarah_agent):
-    """Test that only one state can exist per entry/agent combination."""
+async def test_unique_constraint_per_entry_agent(server, default_organization, sarah_agent, default_user):
+    """Test that only one state can exist per entry/agent combination, and that existing states are updated with new values."""
+    from letta.schemas.world_info_entry import WorldInfoEntryCreate
+    
     manager = WorldInfoInjectionStateManager()
+    world_info_manager = server.world_info_manager
 
-    world_info_entry_id = "wie-unique-constraint"
-
-    # Create first state
-    state1 = await manager.create_injection_state(
-        world_info_entry_id=world_info_entry_id,
-        agent_id=sarah_agent.id,
-        current_cooldown=1,
-        current_expiration=2,
-        cooldown_setting=1,
-        expiration_setting=2,
-        organization_id=default_organization.id,
+    # Create a real World Info entry
+    entry = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test"],
+            content="Test entry",
+            agent_id=sarah_agent.id,
+        ),
+        actor=default_user,
     )
 
-    # Attempt to create second state with same entry/agent
-    # Manager should return the existing state
-    state2 = await manager.create_injection_state(
-        world_info_entry_id=world_info_entry_id,
-        agent_id=sarah_agent.id,
-        current_cooldown=3,
-        current_expiration=4,
-        cooldown_setting=3,
-        expiration_setting=4,
-        organization_id=default_organization.id,
-    )
+    try:
+        # Create first state
+        state1 = await manager.create_injection_state(
+            world_info_entry_id=entry.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=1,
+            current_expiration=2,
+            cooldown_setting=1,
+            expiration_setting=2,
+            organization_id=default_organization.id,
+            actor=default_user,
+        )
 
-    # Should return the same state (not create new one)
-    assert state2.id == state1.id
-    assert state2.world_info_entry_id == world_info_entry_id
+        # Attempt to create second state with same entry/agent
+        # Manager should UPDATE the existing state with new values (not return stale state)
+        state2 = await manager.create_injection_state(
+            world_info_entry_id=entry.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=3,
+            current_expiration=4,
+            cooldown_setting=3,
+            expiration_setting=4,
+            organization_id=default_organization.id,
+            actor=default_user,
+        )
 
-    await manager.delete_injection_state(state1.id)
+        # Should return the same state ID (not create new one)
+        assert state2.id == state1.id
+        assert state2.world_info_entry_id == entry.id
+        
+        # CRITICAL: State should be UPDATED with new values, not returned unchanged
+        # This verifies the fix for the regression where stale states were left behind
+        assert state2.current_cooldown == 3, "State should be updated with new cooldown value"
+        assert state2.current_expiration == 4, "State should be updated with new expiration value"
+        assert state2.cooldown_setting == 3, "State should be updated with new cooldown_setting"
+        assert state2.expiration_setting == 4, "State should be updated with new expiration_setting"
+        
+        # Verify the old values are gone
+        assert state2.current_cooldown != state1.current_cooldown, "Cooldown should have changed"
+        assert state2.current_expiration != state1.current_expiration, "Expiration should have changed"
+
+        await manager.delete_injection_state(state1.id)
+    finally:
+        await world_info_manager.delete_entry_async(entry.id, default_user)
 
 
 @pytest.mark.asyncio
@@ -387,3 +414,78 @@ async def test_update_nonexistent_state(server, default_organization, sarah_agen
     )
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_create_injection_state_resets_completed_state(server, default_organization, sarah_agent, default_user):
+    """Test that creating a state when a completed state exists resets it with new values.
+    
+    This test verifies the fix for the regression where stale completed states (cooldown=None, expiration=0)
+    were left behind when a new activation occurred. The state should be reset with new values instead
+    of being returned unchanged.
+    """
+    from letta.schemas.world_info_entry import WorldInfoEntryCreate
+    
+    manager = WorldInfoInjectionStateManager()
+    world_info_manager = server.world_info_manager
+
+    # Create a real World Info entry
+    entry = await world_info_manager.create_entry_async(
+        entry_create=WorldInfoEntryCreate(
+            keywords=["test"],
+            content="Test entry",
+            agent_id=sarah_agent.id,
+            cooldown=5,
+            expiration=10,
+        ),
+        actor=default_user,
+    )
+
+    try:
+        # Create a completed state (cooldown=None, expiration=0) - this simulates a stale state
+        completed_state = await manager.create_injection_state(
+            world_info_entry_id=entry.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=None,  # No cooldown (complete)
+            current_expiration=0,  # Expired (complete)
+            cooldown_setting=5,
+            expiration_setting=10,
+            organization_id=default_organization.id,
+            actor=default_user,
+        )
+        
+        # Verify it's in completed state
+        assert completed_state.current_cooldown is None
+        assert completed_state.current_expiration == 0
+
+        # Now simulate a new activation - create_injection_state should RESET the state with new values
+        # This is the critical fix: it should update the state, not return the stale completed state
+        new_state = await manager.create_injection_state(
+            world_info_entry_id=entry.id,
+            agent_id=sarah_agent.id,
+            current_cooldown=5,  # New cooldown value
+            current_expiration=10,  # New expiration value
+            cooldown_setting=5,
+            expiration_setting=10,
+            organization_id=default_organization.id,
+            actor=default_user,
+        )
+
+        # Should be the same state ID (not a new state)
+        assert new_state.id == completed_state.id
+        
+        # CRITICAL: State should be RESET with new values, not left in completed state
+        # This verifies the fix prevents stale records from persisting
+        assert new_state.current_cooldown == 5, "State should be reset with new cooldown (was None)"
+        assert new_state.current_expiration == 10, "State should be reset with new expiration (was 0)"
+        assert new_state.cooldown_setting == 5, "State should have updated cooldown_setting"
+        assert new_state.expiration_setting == 10, "State should have updated expiration_setting"
+        
+        # Verify the state is no longer in completed state
+        assert new_state.current_cooldown is not None, "Cooldown should not be None after reset"
+        assert new_state.current_expiration != 0, "Expiration should not be 0 after reset"
+        assert new_state.current_expiration is not None, "Expiration should not be None after reset"
+
+        await manager.delete_injection_state(completed_state.id)
+    finally:
+        await world_info_manager.delete_entry_async(entry.id, default_user)

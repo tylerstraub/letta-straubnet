@@ -193,6 +193,12 @@ class OpenAIClient(LLMClientBase):
             if headers:
                 kwargs["default_headers"] = headers
 
+        # GLM-X Preview requires Accept-Language header (Z.ai API)
+        if llm_config.model == "glm-x-preview":
+            headers = dict(kwargs.get("default_headers") or {})
+            headers["Accept-Language"] = "en-US,en"
+            kwargs["default_headers"] = headers
+
         # The OpenAI client requires some API key value
         kwargs["api_key"] = kwargs.get("api_key") or "DUMMY_API_KEY"
 
@@ -226,6 +232,12 @@ class OpenAIClient(LLMClientBase):
                 headers["X-Title"] = model_settings.openrouter_title
             if headers:
                 kwargs["default_headers"] = headers
+
+        # GLM-X Preview requires Accept-Language header (Z.ai API)
+        if llm_config.model == "glm-x-preview":
+            headers = dict(kwargs.get("default_headers") or {})
+            headers["Accept-Language"] = "en-US,en"
+            kwargs["default_headers"] = headers
 
         kwargs["api_key"] = kwargs.get("api_key") or "DUMMY_API_KEY"
 
@@ -517,8 +529,8 @@ class OpenAIClient(LLMClientBase):
         if llm_config.frequency_penalty is not None:
             data.frequency_penalty = llm_config.frequency_penalty
 
-        # Set top_p for GLM-4.7 model
-        if model == "glm-4.7":
+        # Set top_p for GLM models (Z.ai)
+        if model == "glm-4.7" or model == "glm-x-preview":
             data.top_p = 0.95
 
         if tools and supports_parallel_tool_calling(model):

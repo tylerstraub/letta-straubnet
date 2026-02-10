@@ -37,6 +37,19 @@ class OpenAIProvider(Provider):
             return 100000
         return 16384  # default for openai
 
+    def _is_zai_paas(self) -> bool:
+        """Check if this provider uses Z.ai paas API (OpenAI-compatible)."""
+        return "z.ai" in self.base_url and "paas" in self.base_url
+
+    def _ensure_zai_paas_models(self, data: list[dict]) -> list[dict]:
+        """Inject glm-x-preview into model list for Z.ai paas (may not be in API response)."""
+        if not self._is_zai_paas():
+            return data
+        existing_ids = {m.get("id") for m in data if m.get("id")}
+        if "glm-x-preview" not in existing_ids:
+            data = list(data) + [{"id": "glm-x-preview", "context_length": 200000}]
+        return data
+
     async def _get_models_async(self) -> list[dict]:
         from letta.llm_api.openai import openai_get_model_list_async
 
@@ -50,17 +63,27 @@ class OpenAIProvider(Provider):
         # Decrypt API key before using
         api_key = await self.api_key_enc.get_plaintext_async() if self.api_key_enc else None
 
-        response = await openai_get_model_list_async(
-            self.base_url,
-            api_key=api_key,
-            extra_params=extra_params,
-            # fix_url=True,  # NOTE: make sure together ends with /v1
-        )
+        try:
+            response = await openai_get_model_list_async(
+                self.base_url,
+                api_key=api_key,
+                extra_params=extra_params,
+                # fix_url=True,  # NOTE: make sure together ends with /v1
+            )
+            data = response.get("data", response)
+            assert isinstance(data, list)
+        except Exception as e:
+            # Z.ai paas v4 may not have a /models endpoint; use fallback list
+            if self._is_zai_paas():
+                logger.info("Z.ai paas models API unavailable, using fallback list: %s", e)
+                data = [
+                    {"id": "glm-x-preview", "context_length": 200000},
+                    {"id": "glm-4.7", "context_length": 200000},
+                ]
+            else:
+                raise
 
-        # TODO (cliandy): this is brittle as TogetherAI seems to result in a list instead of having a 'data' field
-        data = response.get("data", response)
-        assert isinstance(data, list)
-        return data
+        return self._ensure_zai_paas_models(data)
 
     async def list_llm_models_async(self) -> list[LLMConfig]:
         data = await self._get_models_async()

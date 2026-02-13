@@ -42,12 +42,12 @@ class OpenAIProvider(Provider):
         return "z.ai" in self.base_url and "paas" in self.base_url
 
     def _ensure_zai_paas_models(self, data: list[dict]) -> list[dict]:
-        """Inject glm-x-preview into model list for Z.ai paas (may not be in API response)."""
+        """Inject glm-5 into model list for Z.ai paas (may not be in API response)."""
         if not self._is_zai_paas():
             return data
         existing_ids = {m.get("id") for m in data if m.get("id")}
-        if "glm-x-preview" not in existing_ids:
-            data = list(data) + [{"id": "glm-x-preview", "context_length": 200000}]
+        if "glm-5" not in existing_ids:
+            data = list(data) + [{"id": "glm-5", "context_length": 200000}]
         return data
 
     async def _get_models_async(self) -> list[dict]:
@@ -77,7 +77,7 @@ class OpenAIProvider(Provider):
             if self._is_zai_paas():
                 logger.info("Z.ai paas models API unavailable, using fallback list: %s", e)
                 data = [
-                    {"id": "glm-x-preview", "context_length": 200000},
+                    {"id": "glm-5", "context_length": 200000},
                     {"id": "glm-4.7", "context_length": 200000},
                 ]
             else:

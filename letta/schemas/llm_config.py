@@ -120,8 +120,8 @@ class LLMConfig(BaseModel):
         if values.get("max_tokens") is None:
             if model == "glm-4.7":
                 values["max_tokens"] = 131072
-            elif model == "glm-x-preview":
-                values["max_tokens"] = 16384
+            elif model == "glm-5":
+                values["max_tokens"] = 131072
             elif model.startswith("gpt-5"):  # Covers both gpt-5 and gpt-5.1
                 values["max_tokens"] = 16384
             elif model == "gpt-4.1":
@@ -132,7 +132,7 @@ class LLMConfig(BaseModel):
         if values.get("context_window") is None:
             if model == "glm-4.7":
                 values["context_window"] = 200000
-            elif model == "glm-x-preview":
+            elif model == "glm-5":
                 values["context_window"] = 200000
             elif model.startswith("gpt-5"):  # Covers both gpt-5 and gpt-5.1
                 values["context_window"] = 272000
@@ -145,7 +145,7 @@ class LLMConfig(BaseModel):
 
         # Set temperature defaults based on model
         if values.get("temperature") is None:
-            if model == "glm-4.7" or model == "glm-x-preview":
+            if model == "glm-4.7" or model == "glm-5":
                 values["temperature"] = 1.0
             # For other models, the field default of 0.7 will be used
 
